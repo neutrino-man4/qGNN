@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
 """
 Author: Aritra Bal, ETP
-Date: August 13, 2025
+Date: Idibus Sextilibus anno ab urbe condita MMDCCLXXVIII
 
 Process ROOT files containing jet data for particle physics classification.
 Converts awkward arrays to structured numpy arrays and saves as HDF5 files.
@@ -378,7 +377,7 @@ def main() -> None:
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="/ceph/abal/",
+        default="/ceph/abal/QML/qGNN",
         help="Base output directory containing PURPOSE subdirectories"
     )
     
