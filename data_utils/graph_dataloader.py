@@ -94,11 +94,13 @@ class JetGraphDataset(Dataset):
             node_features = f['jetConstituentsList'][local_idx]  # [10, 3]
             qfi_matrix = f['jetConstituentsQFI'][local_idx]      # [30, 30]
             label = f['truth_labels'][local_idx]                # scalar
-        
+            jet_pt = f['jetFeatures'][local_idx,0]                  # [4]
         # Convert to tensors
+        node_features[...,0]=node_features[...,0]/jet_pt # Normalise particle pt by jet pt. 
+        
         x = torch.tensor(node_features, dtype=torch.float32)  # [10, 3]
         y = torch.tensor(label, dtype=torch.long)             # [1]
-        
+        jet_pt = torch.tensor(jet_pt, dtype=torch.float32)    # [4]
         # Extract edge features from QFI matrix
         edge_attr = self._extract_edge_features(qfi_matrix)   # [100, 9]
         
