@@ -20,6 +20,7 @@ import awkward as ak
 import h5py
 import numpy as np
 import uproot
+from tqdm import tqdm
 
 
 def calculate_pt(px: ak.Array, py: ak.Array) -> ak.Array:
@@ -303,12 +304,12 @@ def process_data_type(input_dir: str, output_dir: str, data_type: str, purpose: 
         file_groups[xxx].append(file_path)
     
     # Process each group
-    for xxx, group_files in file_groups.items():
+    for xxx, group_files in tqdm(file_groups.items(), desc="Processing groups"):
         print(f"\nProcessing group {xxx} with {len(group_files)} files")
         
         # Process all files in the group
         file_data_list = []
-        for file_path in sorted(group_files):
+        for file_path in tqdm(sorted(group_files), desc=f"Processing files in group {xxx}"):
             try:
                 file_data = process_single_file(file_path)
                 file_data_list.append(file_data)
@@ -324,7 +325,6 @@ def process_data_type(input_dir: str, output_dir: str, data_type: str, purpose: 
         combined_data = combine_files_data(file_data_list)
         
         # Save to HDF5
-        
         output_path = os.path.join(output_dir, f"{data_type}_{xxx}.h5")
         
         if trial_run:
