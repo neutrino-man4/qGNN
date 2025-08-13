@@ -25,7 +25,7 @@ conda run -n qGNN pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1
 
 # Install all other packages
 echo "Installing PyTorch Geometric and other packages..."
-conda run -n qGNN pip install torch-geometric==2.5.3 torch-scatter torch-sparse torch-cluster torch-spline-conv -f https://data.pyg.org/whl/torch-2.4.1+cu118.html && conda run -n qGNN pip install numpy==1.26.4 scipy==1.12.0 matplotlib==3.8.4 scikit-learn==1.4.2 pandas==2.2.2 awkward==2.6.8 uproot==5.3.7 h5py==3.11.0 loguru==0.7.2 tqdm==4.66.4 pyyaml==6.0.1 seaborn==0.13.2 jupyter==1.0.0 ipython==8.25.0 tensorboard==2.17.0
+conda run -n qGNN pip install torch-geometric==2.5.3 torch-scatter torch-sparse torch-cluster torch-spline-conv -f https://data.pyg.org/whl/torch-2.4.1+cu118.html && conda run -n qGNN pip install numpy==1.26.4 scipy==1.12.0 matplotlib==3.8.4 scikit-learn==1.4.2 pandas==2.2.2 awkward==2.6.8 uproot==5.3.7 h5py==3.11.0 loguru==0.7.2 tqdm==4.66.4 pyyaml==6.0.1 seaborn==0.13.2 jupyter==1.0.0 ipython==8.25.0 tensorboard==2.17.0 gpustat
 
 # Quick verification
 echo "Verifying installation..."
