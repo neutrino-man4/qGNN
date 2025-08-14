@@ -559,7 +559,7 @@ if __name__ == "__main__":
             'model': create_jet_gnn('bilinear')
         },
         {
-            'name': 'Deep Correlation GNN',
+            'name': 'DeepCorrGNN',
             'model': create_jet_gnn('correlation', num_layers=5, mp_hidden_layers=[32, 16, 8])
         },
         {
