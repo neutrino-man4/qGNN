@@ -1,0 +1,115 @@
+# Base Configuration for Jet GNN Classification
+# Author: Aritra Bal, ETP
+# Date: XIII Idibus Sextilibus anno ab urbe condita MMDCCLXXVIII
+
+# Experiment identification and output paths
+experiment:
+  seed: "0001"  # String identifier for this training run (e.g., "0001", "0042", "test")
+  name: "correlation_gnn_baseline"  # Human-readable experiment name
+  base_save_dir: "./experiments"  # Base directory for all experiments
+  # Actual save path will be: {base_save_dir}/{name}_{seed}/
+  
+# Random seed for reproducibility  
+reproducibility:
+  random_seed: 42  # Integer seed for torch, numpy, python random
+  deterministic: true  # Whether to use deterministic algorithms (slower but reproducible)
+
+# Data configuration
+data:
+  # File paths - update these to your actual H5 file locations
+  train_files:
+    - "/ceph/abal/train/ZJetsToNuNu_008.h5"
+    - "/ceph/abal/train/TTBar_008.h5"
+  
+  val_files:
+    - "/ceph/abal/val/ZJetsToNuNu_027.h5" 
+    - "/ceph/abal/val/TTBar_027.h5"
+    
+  test_files:  # For inference/evaluation after training
+    - "/ceph/abal/test/ZJetsToNuNu_050.h5"
+    - "/ceph/abal/test/TTBar_050.h5"
+  
+  # DataLoader parameters
+  batch_size: 64
+  use_qfi_correlations: true  # false for identity baseline experiments
+  num_workers: 8  # Number of CPU workers for data loading
+  pin_memory: true  # Pin memory for faster GPU transfer
+
+# Model architecture configuration
+model:
+  type: "correlation"  # "correlation" or "bilinear"
+  
+  # Message passing layers
+  num_mp_layers: 3
+  mp_hidden_layers: [16, 8]  # Hidden layer sizes for message passing MLPs
+  
+  # Final classifier
+  classifier_hidden_layers: [16, 8, 4]  # Hidden layer sizes for classification MLP
+  
+  # Architecture options
+  pooling: "mean"  # "mean", "max", "add", "concat"
+  activation: "elu"  # "elu", "relu", "gelu", "silu", "leaky_relu"
+  residual_connections: true  # Whether to use residual connections in MP layers
+
+# Training configuration
+training:
+  num_epochs: 100
+  learning_rate: 0.001
+  optimizer: "adam"  # "adam", "adamw", "sgd"
+  weight_decay: 1e-4  # L2 regularization strength
+  
+  # Learning rate scheduling
+  use_scheduler: true
+  scheduler_type: "reduce_on_plateau"  # "reduce_on_plateau", "step", "cosine"
+  scheduler_patience: 5  # For ReduceLROnPlateau
+  scheduler_factor: 0.5  # LR reduction factor
+  
+  # Gradient handling
+  gradient_clip_val: 0.0  # Gradient clipping value (0.0 to disable)
+  
+  # Early stopping
+  early_stopping:
+    enabled: true
+    patience: 10  # Number of epochs to wait for improvement
+    monitor: "val_auc"  # Monitor validation AUC for early stopping
+    min_delta: 1e-2  # Minimum change to qualify as improvement
+    mode: "max"  # "max" for AUC
+
+# Validation and evaluation
+validation:
+  val_metrics: ["accuracy", "auc"]  # Essential metrics only
+
+# Checkpointing and model saving
+checkpointing:
+  save_frequency: 10  # Save checkpoint every N epochs
+  save_best_only: false  # Whether to only save best model or keep all checkpoints
+  best_metric: "val_auc"  # Use AUC to determine best model
+  best_mode: "max"  # "max" for AUC
+  
+  # What to save in checkpoints
+  save_optimizer: true  # Save optimizer state
+  save_scheduler: true  # Save scheduler state
+
+# Hardware configuration  
+hardware:
+  device: "cuda"  # "auto", "cpu", "cuda", "cuda:0", "cuda:1", etc.
+
+# Logging configuration
+logging:
+  level: "INFO"  # "DEBUG", "INFO", "WARNING", "ERROR"
+  console_output: true  # Whether to log to console
+  file_output: true    # Whether to log to file
+  log_filename: "training.log"  # Log file name (will be in experiment directory)
+  log_frequency: 10  # Log training metrics every N batches
+
+# Testing/Inference configuration
+testing:
+  batch_size: 128  # Larger batch size for inference (no backprop)
+  save_predictions: true  # Whether to save model predictions
+  predictions_file: "test_predictions.csv"
+  metrics_file: "test_metrics.json"
+
+# Resume training configuration
+resume:
+  enabled: false  # Whether to resume from checkpoint
+  checkpoint_path: null  # Path to checkpoint file (null for auto-detect latest)
