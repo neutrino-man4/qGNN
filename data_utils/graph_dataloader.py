@@ -14,7 +14,7 @@ from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader
 import os
 from pathlib import Path
-
+from loguru import logger
 
 class JetGraphDataset(Dataset):
     """
@@ -22,13 +22,14 @@ class JetGraphDataset(Dataset):
     
     Each jet becomes a fully connected directed graph with:
     - 10 nodes (particles) with 3 features each (pt, deta, dphi)
-    - 100 directed edges with 9 features each (from QFI correlation matrix)
+    - 100 directed edges with 9 features each (from QFI correlation matrix or identity baseline)
     """
     
     def __init__(
         self, 
         h5_files: List[str],
         max_particles: int = 10,
+        use_qfi_correlations: bool = True,
         transform: Optional[callable] = None,
         pre_transform: Optional[callable] = None
     ):
@@ -38,13 +39,21 @@ class JetGraphDataset(Dataset):
         Args:
             h5_files: List of paths to H5 files
             max_particles: Number of particles per jet (nodes in graph)
+            use_qfi_correlations: If True, use QFI correlation matrices; if False, use identity matrices for baseline
             transform: Optional transform to apply to each Data object
             pre_transform: Optional pre-transform to apply during processing
         """
         self.h5_files = h5_files
         self.max_particles = max_particles
+        self.use_qfi_correlations = use_qfi_correlations
         self.transform = transform
         self.pre_transform = pre_transform
+        
+        # Log the correlation mode being used
+        if self.use_qfi_correlations:
+            logger.info(f"JetGraphDataset initialized with QFI correlations enabled")
+        else:
+            logger.info(f"JetGraphDataset initialized with identity baseline (no QFI correlations)")
         
         # Cache static edge connectivity (same for all graphs)
         self.edge_index = self._create_edge_index()
@@ -101,7 +110,7 @@ class JetGraphDataset(Dataset):
         x = torch.tensor(node_features, dtype=torch.float32)  # [10, 3]
         y = torch.tensor(label, dtype=torch.long)             # [1]
         jet_pt = torch.tensor(jet_pt, dtype=torch.float32)    # [4]
-        # Extract edge features from QFI matrix
+        # Extract edge features from QFI matrix (or use identity baseline)
         edge_attr = self._extract_edge_features(qfi_matrix)   # [100, 9]
         
         # Create PyG Data object
@@ -119,10 +128,10 @@ class JetGraphDataset(Dataset):
     
     def _extract_edge_features(self, qfi_matrix: np.ndarray) -> torch.Tensor:
         """
-        Extract edge features from QFI correlation matrix.
+        Extract edge features from QFI correlation matrix or use identity baseline.
         
         Args:
-            qfi_matrix: QFI matrix of shape [30, 30]
+            qfi_matrix: QFI matrix of shape [30, 30] (only used if use_qfi_correlations=True)
             
         Returns:
             Edge features tensor of shape [100, 9]
@@ -133,11 +142,20 @@ class JetGraphDataset(Dataset):
         for edge_idx in range(self.edge_index.size(1)):
             src, dst = self.edge_index[:, edge_idx]
             
-            # Extract 3x3 correlation submatrix between particles src and dst
-            start_src, end_src = 3 * src, 3 * src + 3
-            start_dst, end_dst = 3 * dst, 3 * dst + 3
+            if self.use_qfi_correlations:
+                # Extract 3x3 correlation submatrix between particles src and dst from QFI
+                # This stuff right here is very important: we need to extract the corresponding QFI elements correctly for the 2 nodes in question
+                # Each two-particle interaction has a corresponding 3x3 block within the larger QFI matrix - need to find and extract the correct one 
+                start_src, end_src = 3 * src, 3 * src + 3
+                start_dst, end_dst = 3 * dst, 3 * dst + 3
+                
+                submatrix = qfi_matrix[start_src:end_src, start_dst:end_dst]  # [3, 3]
+            else:
+                # Use identity matrix for baseline (no correlations)
+                # Identity matrix means: features perfectly correlated with themselves, no cross-correlations
+                # This creates a meaningful "no correlation" baseline for ablation studies
+                submatrix = np.eye(3, dtype=np.float32)  # [3, 3] identity matrix
             
-            submatrix = qfi_matrix[start_src:end_src, start_dst:end_dst]  # [3, 3]
             edge_features.append(submatrix.flatten())  # [9]
         
         return torch.tensor(np.stack(edge_features), dtype=torch.float32)  # [100, 9]
@@ -147,6 +165,7 @@ def create_dataloaders(
     train_files: List[str],
     val_files: List[str],
     batch_size: int = 32,
+    use_qfi_correlations: bool = True,
     num_workers: int = 4,
     pin_memory: bool = True
 ) -> Tuple[DataLoader, DataLoader]:
@@ -157,15 +176,18 @@ def create_dataloaders(
         train_files: List of training H5 files
         val_files: List of validation H5 files
         batch_size: Batch size for DataLoader
+        use_qfi_correlations: If True, use QFI correlations; if False, use identity baseline
         num_workers: Number of worker processes
         pin_memory: Whether to pin memory for faster GPU transfer
         
     Returns:
         Tuple of (train_loader, val_loader)
     """
+    logger.info(f"Creating dataloaders with QFI correlations: {use_qfi_correlations}")
+    
     # Create datasets
-    train_dataset = JetGraphDataset(train_files)
-    val_dataset = JetGraphDataset(val_files)
+    train_dataset = JetGraphDataset(train_files, use_qfi_correlations=use_qfi_correlations)
+    val_dataset = JetGraphDataset(val_files, use_qfi_correlations=use_qfi_correlations)
     
     # Create DataLoaders
     train_loader = DataLoader(
@@ -199,6 +221,7 @@ def collate_fn(batch: List[Data]) -> Data:
     """
     # PyG's default Batch.from_data_list handles this efficiently
     from torch_geometric.data import Batch
+
     return Batch.from_data_list(batch)
 
 
@@ -208,10 +231,21 @@ if __name__ == "__main__":
     train_files = [
         "/ceph/abal/train/ZJetsToNuNu_008.h5",
     ]
-    
     val_files = [
         "/ceph/abal/train/ZJetsToNuNu_027.h5",
     ]
+    
+    # Check if the dataset is unbalanced
+    train_zjets = sum(1 for f in train_files if "ZJetsToNuNu" in f)
+    train_ttbar = sum(1 for f in train_files if "TTBar" in f)
+    val_zjets = sum(1 for f in val_files if "ZJetsToNuNu" in f)
+    val_ttbar = sum(1 for f in val_files if "TTBar" in f)
+    
+    if train_zjets != train_ttbar or val_zjets != val_ttbar:
+        logger.warning("Dataset might be unbalanced!")
+        logger.warning(f"Train: {train_zjets} ZJetsToNuNu files, {train_ttbar} TTBar files")
+        logger.warning(f"Val: {val_zjets} ZJetsToNuNu files, {val_ttbar} TTBar files")
+    
     
     # Create DataLoaders
     train_loader, val_loader = create_dataloaders(
