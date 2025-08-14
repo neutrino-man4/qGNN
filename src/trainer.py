@@ -362,7 +362,7 @@ class JetGNNTrainer:
         
         if is_best:
             self.best_metric = current_metric
-            logger.info(f"🎯 New best model! {self.config.checkpointing.best_metric}: {current_metric:.4f}")
+            logger.info(f"New best model! {self.config.checkpointing.best_metric}: {current_metric:.4f}")
         
         return is_best
     
@@ -391,18 +391,18 @@ class JetGNNTrainer:
         if is_best:
             best_path = self.checkpoint_dir / "best_model.pth"
             torch.save(checkpoint, best_path)
-            logger.info(f"💾 Saved best model checkpoint")
+            logger.info(f"Saved best model checkpoint")
         
         # Final/interrupted checkpoint
         if is_final:
             final_path = self.checkpoint_dir / "final_model.pth"
             torch.save(checkpoint, final_path)
-            logger.info("💾 Saved final model checkpoint")
+            logger.info("Saved final model checkpoint")
         
         if is_interrupted:
             interrupted_path = self.checkpoint_dir / "interrupted_model.pth"
             torch.save(checkpoint, interrupted_path)
-            logger.warning("💾 Saved interrupted training checkpoint")
+            logger.warning("Saved interrupted training checkpoint")
         
         # Save training history as JSON
         history_path = self.save_dir / "training_history.json"
