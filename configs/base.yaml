@@ -5,34 +5,116 @@
 # Experiment identification and output paths
 experiment:
   seed: "0001"  # String identifier for this training run (e.g., "0001", "0042", "test")
-  name: "correlation_gnn_baseline"  # Human-readable experiment name
+  name: "quantum_corrGNN"  # Human-readable experiment name
   base_save_dir: "./experiments"  # Base directory for all experiments
   # Actual save path will be: {base_save_dir}/{name}_{seed}/
   
 # Random seed for reproducibility  
 reproducibility:
-  random_seed: 42  # Integer seed for torch, numpy, python random
+  random_seed: 42  # Since we are running on deepthought
   deterministic: true  # Whether to use deterministic algorithms (slower but reproducible)
 
 # Data configuration
 data:
   # File paths - update these to your actual H5 file locations
   train_files:
-    - "/ceph/abal/train/ZJetsToNuNu_008.h5"
-    - "/ceph/abal/train/TTBar_008.h5"
-  
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_000.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_001.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_002.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_003.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_004.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_005.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_006.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_007.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_008.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_009.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_010.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_011.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_012.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_013.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_014.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_015.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_016.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_017.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_018.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_019.h5"
+    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_020.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_000.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_001.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_002.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_003.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_004.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_005.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_006.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_007.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_008.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_009.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_010.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_011.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_012.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_013.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_014.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_015.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_021.h5" # missing 016 for whatever reason, ask BM later
+    - "/ceph/abal/QML/qGNN/train/TTBar_017.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_018.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_019.h5"
+    - "/ceph/abal/QML/qGNN/train/TTBar_020.h5"
+
   val_files:
-    - "/ceph/abal/val/ZJetsToNuNu_027.h5" 
-    - "/ceph/abal/val/TTBar_027.h5"
+    - "/ceph/abal/QML/qGNN/val/ZJetsToNuNu_120.h5"
+    - "/ceph/abal/QML/qGNN/val/ZJetsToNuNu_121.h5"
+    - "/ceph/abal/QML/qGNN/val/ZJetsToNuNu_122.h5"
+    - "/ceph/abal/QML/qGNN/val/TTBar_120.h5"
+    - "/ceph/abal/QML/qGNN/val/TTBar_121.h5"
+    - "/ceph/abal/QML/qGNN/val/TTBar_122.h5"
     
   test_files:  # For inference/evaluation after training
-    - "/ceph/abal/test/ZJetsToNuNu_050.h5"
-    - "/ceph/abal/test/TTBar_050.h5"
-  
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_080.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_081.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_082.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_083.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_084.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_085.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_086.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_087.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_088.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_089.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_090.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_091.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_092.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_093.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_094.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_095.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_096.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_097.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_098.h5"
+    - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_099.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_080.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_081.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_082.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_083.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_084.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_085.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_086.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_087.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_088.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_089.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_090.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_091.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_092.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_093.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_094.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_095.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_096.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_097.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_098.h5"
+    - "/ceph/abal/QML/qGNN/test/TTBar_099.h5"
+
   # DataLoader parameters
   batch_size: 64
   use_qfi_correlations: true  # false for identity baseline experiments
-  num_workers: 8  # Number of CPU workers for data loading
+  num_workers: 2  # Number of CPU workers for data loading
   pin_memory: true  # Pin memory for faster GPU transfer
 
 # Model architecture configuration
