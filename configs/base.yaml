@@ -4,70 +4,34 @@
 
 # Experiment identification and output paths
 experiment:
-  seed: "0001"  # String identifier for this training run (e.g., "0001", "0042", "test")
-  name: "quantum_corrGNN"  # Human-readable experiment name
+  seed: "0003"  # String identifier for this training run (e.g., "0001", "0042", "test")
+  name: "standard_GNN"  # Human-readable experiment name
   base_save_dir: "./experiments"  # Base directory for all experiments
   # Actual save path will be: {base_save_dir}/{name}_{seed}/
   
 # Random seed for reproducibility  
 reproducibility:
   random_seed: 42  # Since we are running on deepthought
-  deterministic: true  # Whether to use deterministic algorithms (slower but reproducible)
+  deterministic: false  # Whether to use deterministic algorithms (# Keep this false, some weird CUBLAS errorsc)
 
 # Data configuration
 data:
   # File paths - update these to your actual H5 file locations
   train_files:
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_000.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_001.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_002.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_003.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_004.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_005.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_006.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_007.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_008.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_009.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_010.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_011.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_012.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_013.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_014.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_015.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_016.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_017.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_018.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_019.h5"
-    - "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_020.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_000.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_001.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_002.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_003.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_004.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_005.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_006.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_007.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_008.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_009.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_010.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_011.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_012.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_013.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_014.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_015.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_021.h5" # missing 016 for whatever reason, ask BM later
-    - "/ceph/abal/QML/qGNN/train/TTBar_017.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_018.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_019.h5"
-    - "/ceph/abal/QML/qGNN/train/TTBar_020.h5"
+    - "/ceph/abal/QML/qGNN/merged/train/TTBar+ZJets_001.h5"
+    - "/ceph/abal/QML/qGNN/merged/train/TTBar+ZJets_003.h5"
+    - "/ceph/abal/QML/qGNN/merged/train/TTBar+ZJets_004.h5"
+    - "/ceph/abal/QML/qGNN/merged/train/TTBar+ZJets_005.h5"
+    - "/ceph/abal/QML/qGNN/merged/train/TTBar+ZJets_006.h5"
+    - "/ceph/abal/QML/qGNN/merged/train/TTBar+ZJets_007.h5"
 
   val_files:
-    - "/ceph/abal/QML/qGNN/val/ZJetsToNuNu_120.h5"
-    - "/ceph/abal/QML/qGNN/val/ZJetsToNuNu_121.h5"
-    - "/ceph/abal/QML/qGNN/val/ZJetsToNuNu_122.h5"
-    - "/ceph/abal/QML/qGNN/val/TTBar_120.h5"
-    - "/ceph/abal/QML/qGNN/val/TTBar_121.h5"
-    - "/ceph/abal/QML/qGNN/val/TTBar_122.h5"
+    - "/ceph/abal/QML/qGNN/merged/val/TTBar+ZJets_002.h5"
+    # - "/ceph/abal/QML/qGNN/val/ZJetsToNuNu_121.h5"
+    # - "/ceph/abal/QML/qGNN/val/ZJetsToNuNu_122.h5"
+    # - "/ceph/abal/QML/qGNN/val/TTBar_120.h5"
+    # - "/ceph/abal/QML/qGNN/val/TTBar_121.h5"
+    # - "/ceph/abal/QML/qGNN/val/TTBar_122.h5"
     
   test_files:  # For inference/evaluation after training
     - "/ceph/abal/QML/qGNN/test/ZJetsToNuNu_080.h5"
@@ -112,8 +76,8 @@ data:
     - "/ceph/abal/QML/qGNN/test/TTBar_099.h5"
 
   # DataLoader parameters
-  batch_size: 64
-  use_qfi_correlations: true  # false for identity baseline experiments
+  batch_size: 256
+  use_qfi_correlations: false  # false for identity baseline experiments
   num_workers: 2  # Number of CPU workers for data loading
   pin_memory: true  # Pin memory for faster GPU transfer
 
@@ -122,23 +86,23 @@ model:
   type: "correlation"  # "correlation" or "bilinear"
   
   # Message passing layers
-  num_mp_layers: 3
-  mp_hidden_layers: [16, 8]  # Hidden layer sizes for message passing MLPs
+  num_mp_layers: 5
+  mp_hidden_layers: [12, 8,4]  # Hidden layer sizes for message passing MLPs
   
   # Final classifier
-  classifier_hidden_layers: [16, 8, 4]  # Hidden layer sizes for classification MLP
+  classifier_hidden_layers: [12, 8, 4]  # Hidden layer sizes for classification MLP
   
   # Architecture options
-  pooling: "mean"  # "mean", "max", "add", "concat"
-  activation: "elu"  # "elu", "relu", "gelu", "silu", "leaky_relu"
+  pooling: "max"  # "mean", "max", "add", "concat"
+  activation: "silu"  # "elu", "relu", "gelu", "silu", "leaky_relu"
   residual_connections: true  # Whether to use residual connections in MP layers
 
 # Training configuration
 training:
-  num_epochs: 100
+  num_epochs: 15
   learning_rate: 0.001
   optimizer: "adam"  # "adam", "adamw", "sgd"
-  weight_decay: 1e-4  # L2 regularization strength
+  weight_decay: !!float 1e-4  # L2 regularization strength
   
   # Learning rate scheduling
   use_scheduler: true
@@ -153,8 +117,8 @@ training:
   early_stopping:
     enabled: true
     patience: 10  # Number of epochs to wait for improvement
-    monitor: "val_auc"  # Monitor validation AUC for early stopping
-    min_delta: 1e-2  # Minimum change to qualify as improvement
+    monitor: "auc"  # Monitor validation AUC for early stopping
+    min_delta: !!float 1e-2  # Minimum change to qualify as improvement
     mode: "max"  # "max" for AUC
 
 # Validation and evaluation
@@ -165,7 +129,7 @@ validation:
 checkpointing:
   save_frequency: 10  # Save checkpoint every N epochs
   save_best_only: false  # Whether to only save best model or keep all checkpoints
-  best_metric: "val_auc"  # Use AUC to determine best model
+  best_metric: "auc"  # Use AUC to determine best model
   best_mode: "max"  # "max" for AUC
   
   # What to save in checkpoints
