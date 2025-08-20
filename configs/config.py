@@ -38,6 +38,7 @@ class DataConfig:
     use_qfi_correlations: bool = True
     num_workers: int = 8
     pin_memory: bool = True
+    test_n: int = 1000
 
 
 @dataclass
@@ -226,7 +227,8 @@ def _create_data_config(data: dict) -> DataConfig:
         batch_size=data.get('batch_size', 64),
         use_qfi_correlations=data.get('use_qfi_correlations', True),
         num_workers=data.get('num_workers', 8),
-        pin_memory=data.get('pin_memory', True)
+        pin_memory=data.get('pin_memory', True),
+        test_n=data.get('test_n', 1000)
     )
 
 
