@@ -17,6 +17,7 @@ from loguru import logger
 from sklearn.metrics import roc_auc_score
 import json
 import time
+from tqdm import tqdm
 
 
 class EarlyStopping:
@@ -163,6 +164,9 @@ class JetGNNTrainer:
                 val_metrics = self.validate_epoch()
                 
                 # Learning rate scheduling
+                #import pdb;pdb.set_trace()
+                self._update_history(train_metrics, val_metrics)
+                
                 if self.scheduler is not None:
                     if isinstance(self.scheduler, ReduceLROnPlateau):
                         self.scheduler.step(val_metrics[self.config.training.early_stopping.monitor])
@@ -170,7 +174,6 @@ class JetGNNTrainer:
                         self.scheduler.step()
                 
                 # Update training history
-                self._update_history(train_metrics, val_metrics)
                 
                 # Log epoch results
                 self._log_epoch_results(epoch, train_metrics, val_metrics)
@@ -208,7 +211,7 @@ class JetGNNTrainer:
             self._save_checkpoint(self.current_epoch, val_metrics, is_interrupted=True)
             raise
         except Exception as e:
-            logger.error(f"Training failed with error: {e}")
+            logger.exception("Training failed")  # includes full traceback
             raise
     
     def train_epoch(self) -> Dict[str, float]:
@@ -222,11 +225,10 @@ class JetGNNTrainer:
         total_loss = 0.0
         total_correct = 0
         total_samples = 0
-        
+        num_batches=len(self.train_loader)
         # Progress tracking
         log_frequency = self.config.logging.log_frequency
-        
-        for batch_idx, batch in enumerate(self.train_loader):
+        for batch_idx, batch in enumerate(tqdm(self.train_loader, desc="Training", total=num_batches)):
             # Move batch to device
             batch = batch.to(self.device)
             
@@ -260,12 +262,12 @@ class JetGNNTrainer:
             if batch_idx % log_frequency == 0:
                 current_lr = self.optimizer.param_groups[0]['lr']
                 logger.debug(
-                    f"Epoch {self.current_epoch} [{batch_idx}/{len(self.train_loader)}] "
+                    f"Epoch {self.current_epoch} [{batch_idx}/{num_batches}] "
                     f"Loss: {loss.item():.4f}, LR: {current_lr:.2e}"
                 )
         
         # Calculate epoch metrics
-        avg_loss = total_loss / len(self.train_loader)
+        avg_loss = total_loss / num_batches
         accuracy = total_correct / total_samples
         
         return {
@@ -287,9 +289,10 @@ class JetGNNTrainer:
         all_predictions = []
         all_probabilities = []
         all_labels = []
-        
+        num_batches = len(self.val_loader)
         with torch.no_grad():
-            for batch in self.val_loader:
+            # wrap in tqdm with total arg
+            for batch in tqdm(self.val_loader, desc="Validation", total=num_batches):
                 # Move batch to device
                 batch = batch.to(self.device)
                 
@@ -311,9 +314,8 @@ class JetGNNTrainer:
                 all_labels.extend(batch.y.cpu().numpy())
         
         # Calculate metrics
-        avg_loss = total_loss / len(self.val_loader)
+        avg_loss = total_loss / num_batches
         accuracy = total_correct / total_samples
-        
         # Calculate AUC
         try:
             auc = roc_auc_score(all_labels, all_probabilities)
