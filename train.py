@@ -8,7 +8,7 @@ Orchestrates data loading, model creation, training, and checkpointing.
 """
 
 import argparse
-import sys
+import sys,os
 import torch
 import numpy as np
 import random
@@ -17,7 +17,7 @@ from pathlib import Path
 # Import project modules
 sys.path.append('.')
 from configs.config import load_config
-from data_utils.graph_dataloader import create_dataloaders
+from data_utils.graph_dataloader import StreamingJetDataLoader
 from src.gnn import create_jet_gnn
 from src.trainer import JetGNNTrainer, create_optimizer, create_scheduler
 from src.logs import setup_logging
@@ -73,7 +73,7 @@ def setup_device(device_config: str) -> torch.device:
     return device
 
 
-def setup_experiment_directory(config) -> Path:
+def setup_experiment_directory(config,config_path) -> Path:
     """
     Create experiment directory with seed-based naming.
     
@@ -84,13 +84,15 @@ def setup_experiment_directory(config) -> Path:
         Path to experiment directory
     """
     exp_name = f"{config.experiment.name}_{config.experiment.seed}"
-    exp_dir = Path(config.experiment.base_save_dir) / exp_name
-    exp_dir.mkdir(parents=True, exist_ok=True)
-    
+    exp_dir = os.path.join(config.experiment.base_save_dir, exp_name)
+
+    Path(exp_dir).mkdir(parents=True, exist_ok=True)
+
     # Save config copy to experiment directory
-    config_copy_path = exp_dir / "config.yaml"
-    import shutil
-    shutil.copy("./configs/base.yaml", config_copy_path)
+    config_copy_path = os.path.join(config.experiment.base_save_dir, "config.yaml")
+    # do the copy with subprocess
+    import subprocess
+    subprocess.run(["cp", config_path, config_copy_path])
     
     logger.info(f"Experiment directory: {exp_dir}")
     return exp_dir
@@ -146,10 +148,10 @@ def main():
         
         # Setup experiment directory
         logger.info("Setting up experiment directory...")
-        exp_dir = setup_experiment_directory(config)
-        
+        exp_dir = setup_experiment_directory(config,args.config)
+        #import pdb;pdb.set_trace()
         # Setup logging to file
-        setup_logging(config, exp_dir)
+        setup_logging(config.experiment.name+'_'+config.experiment.seed, exp_dir)
         logger.info(f"Logging setup complete")
         
         # Set random seeds for reproducibility
@@ -165,15 +167,28 @@ def main():
         
         # Create data loaders
         logger.info("Creating data loaders...")
-        train_loader, val_loader = create_dataloaders(
-            train_files=config.data.train_files,
-            val_files=config.data.val_files,
+        # train_loader, val_loader = create_dataloaders(
+        #     train_files=config.data.train_files,
+        #     val_files=config.data.val_files,
+        #     batch_size=config.data.batch_size,
+        #     use_qfi_correlations=config.data.use_qfi_correlations,
+        #     num_workers=config.data.num_workers,
+        #     pin_memory=config.data.pin_memory
+        # )
+        logger.info("Creating streaming data loaders...")
+        train_loader = StreamingJetDataLoader(
+            h5_files=config.data.train_files,
             batch_size=config.data.batch_size,
-            use_qfi_correlations=config.data.use_qfi_correlations,
-            num_workers=config.data.num_workers,
-            pin_memory=config.data.pin_memory
+            use_qfi_correlations=config.data.use_qfi_correlations
         )
-        
+
+        val_loader = StreamingJetDataLoader(
+            h5_files=config.data.val_files,
+            batch_size=config.data.batch_size,
+            use_qfi_correlations=config.data.use_qfi_correlations
+        )
+
+
         logger.success(f"Data loaders created")
         logger.info(f"Training batches: {len(train_loader)}")
         logger.info(f"Validation batches: {len(val_loader)}")
