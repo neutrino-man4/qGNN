@@ -1,266 +1,212 @@
 """
 Author: Aritra Bal, ETP
-Date: XIII Idibus Sextilibus anno ab urbe condita MMDCCLXXVIII
+Date: XVIII Sextilis anno ab urbe condita MMDCCLXXVIII
 
-PyTorch Geometric DataLoader for jet classification using graph neural networks.
-Constructs fully connected graphs with correlation-based edge features.
+Simplified streaming PyTorch Geometric DataLoader for jet classification.
+Reads batches of jets at once for maximum efficiency.
 """
 
 import h5py
 import torch
 import numpy as np
-from typing import List, Optional, Tuple
-from torch_geometric.data import Data, Dataset
-from torch_geometric.loader import DataLoader
-import os
-from pathlib import Path
-from loguru import logger
+from typing import List, Iterator
+from torch_geometric.data import Data, Batch
+import time
 
-class JetGraphDataset(Dataset):
+class StreamingJetDataLoader:
     """
-    Dataset for loading jet data as graphs for GNN-based classification.
-    
-    Each jet becomes a fully connected directed graph with:
-    - 10 nodes (particles) with 3 features each (pt, deta, dphi)
-    - 100 directed edges with 9 features each (from QFI correlation matrix or identity baseline)
+    Simple streaming DataLoader that reads batches of jets efficiently.
     """
     
     def __init__(
-        self, 
+        self,
         h5_files: List[str],
-        max_particles: int = 10,
-        use_qfi_correlations: bool = True,
-        transform: Optional[callable] = None,
-        pre_transform: Optional[callable] = None
+        batch_size: int = 32,
+        use_qfi_correlations: bool = True
     ):
         """
-        Initialize the dataset.
+        Initialize streaming dataloader.
         
         Args:
             h5_files: List of paths to H5 files
-            max_particles: Number of particles per jet (nodes in graph)
-            use_qfi_correlations: If True, use QFI correlation matrices; if False, use identity matrices for baseline
-            transform: Optional transform to apply to each Data object
-            pre_transform: Optional pre-transform to apply during processing
+            batch_size: Batch size for yielding
+            use_qfi_correlations: If True, use QFI correlations; if False, use identity baseline
         """
         self.h5_files = h5_files
-        self.max_particles = max_particles
+        self.batch_size = batch_size
         self.use_qfi_correlations = use_qfi_correlations
-        self.transform = transform
-        self.pre_transform = pre_transform
-        
-        # Log the correlation mode being used
-        if self.use_qfi_correlations:
-            logger.info(f"JetGraphDataset initialized with QFI correlations enabled")
-        else:
-            logger.info(f"JetGraphDataset initialized with identity baseline (no QFI correlations)")
-        
-        # Cache static edge connectivity (same for all graphs)
-        self.edge_index = self._create_edge_index()
-        
-        # Build index mapping: global_idx -> (file_idx, local_jet_idx)
-        self.index_map = self._build_index_map()
-        
-        super().__init__()
-    
-    def _create_edge_index(self) -> torch.Tensor:
-        """Create fully connected directed graph edge index."""
-        sources = torch.arange(self.max_particles).repeat(self.max_particles)
-        targets = torch.arange(self.max_particles).repeat_interleave(self.max_particles)
-        return torch.stack([sources, targets], dim=0)  # [2, 100]
-    
-    def _build_index_map(self) -> List[Tuple[int, int]]:
-        """Build mapping from global index to (file_index, local_jet_index)."""
-        index_map = []
-        
-        for file_idx, h5_file in enumerate(self.h5_files):
-            with h5py.File(h5_file, 'r') as f:
-                n_jets = f['truth_labels'].shape[0]
-                for local_idx in range(n_jets):
-                    index_map.append((file_idx, local_idx))
-        
-        return index_map
-    
-    def len(self) -> int:
-        """Return total number of jets across all files."""
-        return len(self.index_map)
-    
-    def get(self, idx: int) -> Data:
-        """
-        Get a single jet as a PyG Data object.
-        
-        Args:
-            idx: Global jet index
+        if not self.use_qfi_correlations:
+            print('#'*50)
+            print("Using identity baseline (no QFI correlations)")
+            print('#'*50)
             
-        Returns:
-            PyG Data object representing the jet as a graph
-        """
-        file_idx, local_idx = self.index_map[idx]
-        h5_file = self.h5_files[file_idx]
+            time.sleep(5)
         
-        with h5py.File(h5_file, 'r') as f:
-            # Load raw data for this jet
-            node_features = f['jetConstituentsList'][local_idx]  # [10, 3]
-            qfi_matrix = f['jetConstituentsQFI'][local_idx]      # [30, 30]
-            label = f['truth_labels'][local_idx]                # scalar
-            jet_pt = f['jetFeatures'][local_idx,0]                  # [4]
-        # Convert to tensors
-        node_features[...,0]=node_features[...,0]/jet_pt # Normalise particle pt by jet pt. 
+        # Create static edge connectivity (fully connected graph)
+        max_particles = 10
+        sources = torch.arange(max_particles).repeat(max_particles)
+        targets = torch.arange(max_particles).repeat_interleave(max_particles)
+        self.edge_index = torch.stack([sources, targets], dim=0)  # [2, 100]
         
-        x = torch.tensor(node_features, dtype=torch.float32)  # [10, 3]
-        y = torch.tensor(label, dtype=torch.long)             # [1]
-        jet_pt = torch.tensor(jet_pt, dtype=torch.float32)    # [4]
-        # Extract edge features from QFI matrix (or use identity baseline)
-        edge_attr = self._extract_edge_features(qfi_matrix)   # [100, 9]
+        # Reset state
+        self.current_file_idx = 0
+        self.current_jet_idx = 0
+        self.current_file = None
+        self.current_file_size = 0
+    
+    def __len__(self) -> int:
+        """Return number of batches."""
+        if not hasattr(self, '_total_jets'):
+            self._total_jets = 0
+            for file_path in self.h5_files:
+                with h5py.File(file_path, 'r') as f:
+                    self._total_jets += f['truth_labels'].shape[0]
+        return (self._total_jets + self.batch_size - 1) // self.batch_size
+    
+    def __iter__(self) -> Iterator[Batch]:
+        """Initialize iterator."""
+        self.current_file_idx = 0
+        self.current_jet_idx = 0
+        self._open_current_file()
+        return self
+    
+    def __next__(self) -> Batch:
+        """Get next batch."""
+        # Move to next file if current is exhausted
+        while self.current_jet_idx >= self.current_file_size:
+            self._close_current_file()
+            self.current_file_idx += 1
+            if self.current_file_idx >= len(self.h5_files):
+                raise StopIteration
+            self._open_current_file()
+            self.current_jet_idx = 0
         
-        # Create PyG Data object
-        data = Data(
-            x=x,
-            edge_index=self.edge_index.clone(),  # [2, 100]
-            edge_attr=edge_attr,                 # [100, 9]
-            y=y
-        )
+        # Read batch of jets
+        batch_end = min(self.current_jet_idx + self.batch_size, self.current_file_size)
+        batch_data = self._read_batch(self.current_jet_idx, batch_end)
+        self.current_jet_idx = batch_end
         
-        if self.pre_transform is not None:
-            data = self.pre_transform(data)
+        return batch_data
+    
+    def _open_current_file(self) -> None:
+        """Open current file."""
+        file_path = self.h5_files[self.current_file_idx]
+        self.current_file = h5py.File(file_path, 'r')
+        self.current_file_size = self.current_file['truth_labels'].shape[0]
+    
+    def _close_current_file(self) -> None:
+        """Close current file."""
+        if self.current_file is not None:
+            self.current_file.close()
+            self.current_file = None
+    
+    def _read_batch(self, start_idx: int, end_idx: int) -> Batch:
+        """Read a batch of jets from current file."""
+        # Read batch data at once
+        node_features = self.current_file['jetConstituentsList'][start_idx:end_idx]  # [batch, 10, 3]
+        qfi_matrices = self.current_file['jetConstituentsQFI'][start_idx:end_idx]    # [batch, 30, 30]
+        labels = self.current_file['truth_labels'][start_idx:end_idx]               # [batch]
+        jet_pts = self.current_file['jetFeatures'][start_idx:end_idx, 0]           # [batch]
         
-        return data
+        # Normalize particle pt by jet pt
+        node_features = node_features.copy()
+        node_features[..., 0] = node_features[..., 0] / jet_pts[:, None]
+        
+        # Create list of PyG Data objects
+        data_list = []
+        for i in range(len(labels)):
+            # Node features
+            x = torch.tensor(node_features[i], dtype=torch.float32)  # [10, 3]
+            
+            # Edge features from QFI matrix
+            if self.use_qfi_correlations:
+                edge_attr = self._extract_edge_features(qfi_matrices[i])  # [100, 9]
+            else:
+                # Identity baseline
+                identity_flat = torch.tensor([1, 0, 0, 0, 1, 0, 0, 0, 1], dtype=torch.float32)
+                edge_attr = identity_flat.repeat(100, 1)  # [100, 9]
+            
+            # Label
+            y = torch.tensor(labels[i], dtype=torch.long)
+            
+            data_list.append(Data(
+                x=x,
+                edge_index=self.edge_index.clone(),
+                edge_attr=edge_attr,
+                y=y
+            ))
+        
+        return Batch.from_data_list(data_list)
     
     def _extract_edge_features(self, qfi_matrix: np.ndarray) -> torch.Tensor:
-        """
-        Extract edge features from QFI correlation matrix or use identity baseline.
+        """Extract 3x3 submatrices from QFI correlation matrix for each edge."""
+        # Get source and destination indices for all edges
+        src_nodes = self.edge_index[0].numpy()  # [100]
+        dst_nodes = self.edge_index[1].numpy()  # [100]
         
-        Args:
-            qfi_matrix: QFI matrix of shape [30, 30] (only used if use_qfi_correlations=True)
-            
-        Returns:
-            Edge features tensor of shape [100, 9]
-        """
-        edge_features = []
+        # Vectorized extraction of 3x3 submatrices
+        src_base = src_nodes * 3
+        dst_base = dst_nodes * 3
         
-        # Iterate through all edges (src, dst)
-        for edge_idx in range(self.edge_index.size(1)):
-            src, dst = self.edge_index[:, edge_idx]
-            
-            if self.use_qfi_correlations:
-                # Extract 3x3 correlation submatrix between particles src and dst from QFI
-                # This stuff right here is very important: we need to extract the corresponding QFI elements correctly for the 2 nodes in question
-                # Each two-particle interaction has a corresponding 3x3 block within the larger QFI matrix - need to find and extract the correct one 
-                start_src, end_src = 3 * src, 3 * src + 3
-                start_dst, end_dst = 3 * dst, 3 * dst + 3
-                
-                submatrix = qfi_matrix[start_src:end_src, start_dst:end_dst]  # [3, 3]
-            else:
-                # Use identity matrix for baseline (no correlations)
-                # Identity matrix means: features perfectly correlated with themselves, no cross-correlations
-                # This creates a meaningful "no correlation" baseline for ablation studies
-                submatrix = np.eye(3, dtype=np.float32)  # [3, 3] identity matrix
-            
-            edge_features.append(submatrix.flatten())  # [9]
+        # Create indices for 3x3 submatrix extraction
+        row_offsets = np.tile([0, 0, 0, 1, 1, 1, 2, 2, 2], len(src_nodes))
+        col_offsets = np.tile([0, 1, 2, 0, 1, 2, 0, 1, 2], len(dst_nodes))
         
-        return torch.tensor(np.stack(edge_features), dtype=torch.float32)  # [100, 9]
-
-
-def create_dataloaders(
-    train_files: List[str],
-    val_files: List[str],
-    batch_size: int = 32,
-    use_qfi_correlations: bool = True,
-    num_workers: int = 4,
-    pin_memory: bool = True
-) -> Tuple[DataLoader, DataLoader]:
-    """
-    Create train and validation DataLoaders.
-    
-    Args:
-        train_files: List of training H5 files
-        val_files: List of validation H5 files
-        batch_size: Batch size for DataLoader
-        use_qfi_correlations: If True, use QFI correlations; if False, use identity baseline
-        num_workers: Number of worker processes
-        pin_memory: Whether to pin memory for faster GPU transfer
+        row_indices = np.repeat(src_base, 9) + row_offsets
+        col_indices = np.repeat(dst_base, 9) + col_offsets
         
-    Returns:
-        Tuple of (train_loader, val_loader)
-    """
-    logger.info(f"Creating dataloaders with QFI correlations: {use_qfi_correlations}")
-    
-    # Create datasets
-    train_dataset = JetGraphDataset(train_files, use_qfi_correlations=use_qfi_correlations)
-    val_dataset = JetGraphDataset(val_files, use_qfi_correlations=use_qfi_correlations)
-    
-    # Create DataLoaders
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=pin_memory
-    )
-    
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=pin_memory
-    )
-    
-    return train_loader, val_loader
-
-
-def collate_fn(batch: List[Data]) -> Data:
-    """
-    Custom collate function for batching graphs (optional, PyG handles this automatically).
-    
-    Args:
-        batch: List of Data objects
+        # Extract all elements and reshape to [100, 9]
+        extracted = qfi_matrix[row_indices, col_indices].reshape(-1, 9)
         
-    Returns:
-        Batched Data object
-    """
-    # PyG's default Batch.from_data_list handles this efficiently
-    from torch_geometric.data import Batch
-
-    return Batch.from_data_list(batch)
+        return torch.tensor(extracted, dtype=torch.float32)
+    
+    def __del__(self):
+        """Cleanup file handle."""
+        self._close_current_file()
 
 
-# Example usage
+def get_total_jets(h5_files: List[str]) -> int:
+    """Get total number of jets across all files."""
+    total = 0
+    for file_path in h5_files:
+        with h5py.File(file_path, 'r') as f:
+            total += f['truth_labels'].shape[0]
+    return total
+
 if __name__ == "__main__":
+    import tqdm
+    
     # Example file paths
     train_files = [
-        "/ceph/abal/train/ZJetsToNuNu_008.h5",
-    ]
-    val_files = [
-        "/ceph/abal/train/ZJetsToNuNu_027.h5",
+        "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_008.h5",
+        #"/ceph/abal/QML/qGNN/val/ZJetsToNuNu_120.h5",
     ]
     
-    # Check if the dataset is unbalanced
-    train_zjets = sum(1 for f in train_files if "ZJetsToNuNu" in f)
-    train_ttbar = sum(1 for f in train_files if "TTBar" in f)
-    val_zjets = sum(1 for f in val_files if "ZJetsToNuNu" in f)
-    val_ttbar = sum(1 for f in val_files if "TTBar" in f)
-    
-    if train_zjets != train_ttbar or val_zjets != val_ttbar:
-        logger.warning("Dataset might be unbalanced!")
-        logger.warning(f"Train: {train_zjets} ZJetsToNuNu files, {train_ttbar} TTBar files")
-        logger.warning(f"Val: {val_zjets} ZJetsToNuNu files, {val_ttbar} TTBar files")
-    
-    
-    # Create DataLoaders
-    train_loader, val_loader = create_dataloaders(
-        train_files=train_files,
-        val_files=val_files,
+    # Create dataloader
+    dataloader = StreamingJetDataLoader(
+        h5_files=train_files,
         batch_size=64,
-        num_workers=8
+        use_qfi_correlations=True
     )
     
-    # Test loading a batch
-    for batch in train_loader:
-        print(f"Batch info:")
-        print(f"  Number of graphs: {batch.num_graphs}")
-        print(f"  Node features: {batch.x.shape}")      # [batch_size*10, 3]
-        print(f"  Edge features: {batch.edge_attr.shape}") # [batch_size*100, 9]
-        print(f"  Edge index: {batch.edge_index.shape}")   # [2, batch_size*100]
-        print(f"  Labels: {batch.y.shape}")               # [batch_size]
-        break
+    print(f"Total batches: {len(dataloader)}")
+    print(f"Total jets: {get_total_jets(train_files)}")
+    
+    # Time the iteration
+    start_time = time.time()
+    total_jets_processed = 0
+
+    for batch_idx, batch in tqdm.tqdm(enumerate(dataloader), total=len(dataloader)):
+        total_jets_processed += batch.num_graphs
+        
+        # Print stats for first batch
+        if batch_idx == 0:
+            print(f"Batch shape - x: {batch.x.shape}, edge_index: {batch.edge_index.shape}")
+            print(f"Edge attr shape: {batch.edge_attr.shape}, y shape: {batch.y.shape}")
+            print(f"First batch size: {batch.num_graphs}")
+    
+    end_time = time.time()
+    processing_time = end_time - start_time
+    
+    print(f"Processed {total_jets_processed} jets in {processing_time:.2f} seconds")
+    print(f"Rate: {total_jets_processed/processing_time:.0f} jets/second")
