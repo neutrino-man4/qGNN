@@ -7,14 +7,14 @@ Basic logging setup for the qGNN based on loguru, slightly better than the defau
 
 from loguru import logger
 import sys
-from pathlib import Path
+import pathlib,os 
 from typing import Optional
 
 
 def setup_logging(
     experiment_name: str = "jet_gnn", 
+    log_dir: Optional[str] = '/work/abal/qGNN/logs/tmp/',
     log_level: str = "INFO",
-    log_dir: Optional[str] = '/work/abal/qGNN/logs/tmp/'
 ) -> None:
     """
     Configure loguru logging for the entire project.
@@ -48,12 +48,11 @@ def setup_logging(
     # File logging with detailed format
     if log_dir is None:
         log_dir = "/tmp/abal/logs"
-
-    log_path = Path(log_dir)
-    log_path.mkdir(exist_ok=True, parents=True)
+    # dont use paths, use os to join paths, and then use pathlib to make directories/files
+    pathlib.Path(log_dir).mkdir(exist_ok=True, parents=True)
 
     logger.add(
-        log_path / f"{experiment_name}.log",
+        os.path.join(log_dir, f"{experiment_name}.log"),
         level=log_level,
         format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message}",
         rotation="10 MB",      # Rotate when file reaches 10MB
@@ -64,9 +63,9 @@ def setup_logging(
     # Add script name context for better tracking
     logger.configure(extra={"script": "setup"})
     
-    logger.info(f"🚀 Logging initialized for experiment: {experiment_name}")
-    logger.info(f"📁 Log level: {log_level}")
-    logger.info(f"📄 Log file: {log_path / f'{experiment_name}.log'}")
+    logger.info(f"Logging initialized for experiment: {experiment_name}")
+    logger.info(f"Log level: {log_level}")
+    logger.info(f"Log file: {os.path.join(log_dir, f'{experiment_name}.log')}")
 
 
 def get_script_logger(script_name: str):
