@@ -1,6 +1,6 @@
 """
 Author: Aritra Bal, ETP
-Date: XIII Idibus Sextilibus anno ab urbe condita MMDCCLXXVIII
+Date: die Iovis ante diem duodecimum Kalendas Septembres anno ab urbe condita MMDCCLXXVIII
 
 Configuration loader for Jet GNN training with dataclass-based config management.
 Loads YAML configuration files and converts them to structured Python objects.
@@ -8,7 +8,7 @@ Loads YAML configuration files and converts them to structured Python objects.
 
 import yaml
 from dataclasses import dataclass, field
-from typing import List, Optional, Union, Any
+from typing import List, Optional, Union, Any, Dict
 from pathlib import Path
 from loguru import logger
 
@@ -42,15 +42,48 @@ class DataConfig:
 
 
 @dataclass
+class GATConfig:
+    """GAT-specific configuration."""
+    out_channels: int = 4
+    heads: int = 8
+    concat: bool = True
+    dropout: float = 0.1
+    negative_slope: float = 0.2
+    correlation_mode: str = "trace"  # "scalar", "trace", "frobenius"
+    add_self_loops: bool = True
+    bias: bool = True
+
+
+@dataclass  
+class Conv1DConfig:
+    """Conv1D message passing configuration."""
+    out_channels: int = 4
+    kernel_size: int = 5
+    mlp_layers: List[int] = field(default_factory=lambda: [3, 16, 8, 4, 2])
+
+
+@dataclass
 class ModelConfig:
     """Model architecture configuration."""
-    type: str = "correlation"  # "correlation" or "bilinear"
+    type: str = "correlation"  # "correlation", "uni-correlation", "bilinear", "conv1d", "GAT"
     num_mp_layers: int = 3
     mp_hidden_layers: List[int] = field(default_factory=lambda: [16, 8])
     classifier_hidden_layers: List[int] = field(default_factory=lambda: [16, 8])
     pooling: str = "mean"  # "mean", "max", "add", "concat"
     activation: str = "elu"
     residual_connections: bool = True
+    
+    # Nested configurations for specific model types
+    gat_config: GATConfig = field(default_factory=GATConfig)
+    conv1d_config: Conv1DConfig = field(default_factory=Conv1DConfig)
+    def get_extra_config(self) -> Dict[str, Any]:
+        """Get the extra configuration for the current model type."""
+        if self.type.lower() == "gat":
+            return self.gat_config.__dict__
+        elif self.type.lower() == "conv1d":
+            return self.conv1d_config.__dict__
+        else:
+            return {}  # No extra config needed for correlation, uni-correlation, bilinear
 
 
 @dataclass
@@ -232,6 +265,27 @@ def _create_data_config(data: dict) -> DataConfig:
     )
 
 
+def _create_gat_config(data: dict) -> GATConfig:
+    """Create GATConfig from YAML data."""
+    return GATConfig(
+        out_channels=data.get('out_channels', 4),
+        heads=data.get('heads', 8),
+        concat=data.get('concat', True),
+        dropout=data.get('dropout', 0.1),
+        negative_slope=data.get('negative_slope', 0.2),
+        correlation_mode=data.get('correlation_mode', 'trace'),
+        bias=data.get('bias', True)
+    )
+
+
+def _create_conv1d_config(data: dict) -> Conv1DConfig:
+    """Create Conv1DConfig from YAML data."""
+    return Conv1DConfig(
+        out_channels=data.get('out_channels', 4),
+        kernel_size=data.get('kernel_size', 5),
+    )
+
+
 def _create_model_config(data: dict) -> ModelConfig:
     """Create ModelConfig from YAML data."""
     return ModelConfig(
@@ -241,7 +295,9 @@ def _create_model_config(data: dict) -> ModelConfig:
         classifier_hidden_layers=data.get('classifier_hidden_layers', [16, 8]),
         pooling=data.get('pooling', 'mean'),
         activation=data.get('activation', 'elu'),
-        residual_connections=data.get('residual_connections', True)
+        residual_connections=data.get('residual_connections', True),
+        gat_config=_create_gat_config(data.get('gat_config', {})),
+        conv1d_config=_create_conv1d_config(data.get('conv1d_config', {}))
     )
 
 
@@ -253,7 +309,7 @@ def _create_training_config(data: dict) -> TrainingConfig:
         patience=early_stopping_data.get('patience', 10),
         monitor=early_stopping_data.get('monitor', 'val_auc'),
         min_delta=early_stopping_data.get('min_delta', 1e-4),
-        mode=early_stopping_data.get('mode', 'max')
+        mode=early_stopping_data.get('mode', 'max'),
     )
     
     return TrainingConfig(
@@ -337,9 +393,22 @@ def _validate_config(config: Config) -> None:
         ValueError: If configuration values are invalid
     """
     # Validate model type
-    if config.model.type not in ['correlation', 'bilinear']:
-        raise ValueError(f"Invalid model type: {config.model.type}. Must be 'correlation' or 'bilinear'")
+    if config.model.type.lower() not in ['correlation','uni-correlation', 'bilinear', 'conv1d', 'gat']:
+        raise ValueError(f"Invalid model type: {config.model.type}. Must be 'correlation', 'uni-correlation', 'bilinear', 'conv1d', or 'GAT' (case-insensitive)")
+
+    # Validate type-specific configurations
+    if config.model.type.lower() == "gat":
+        if config.model.gat_config.correlation_mode not in ['scalar', 'trace', 'frobenius']:
+            raise ValueError(f"Invalid GAT correlation mode: {config.model.gat_config.correlation_mode}")
+        if config.model.gat_config.heads <= 0:
+            raise ValueError(f"GAT heads must be positive: {config.model.gat_config.heads}")
     
+    if config.model.type.lower() == "conv1d":
+        if config.model.conv1d_config.out_channels <= 0:
+            raise ValueError(f"Conv1D out_channels must be positive: {config.model.conv1d_config.out_channels}")
+        if config.model.conv1d_config.kernel_size <= 0:
+            raise ValueError(f"Conv1D kernel_size must be positive: {config.model.conv1d_config.kernel_size}")
+
     # Validate pooling type
     if config.model.pooling not in ['mean', 'max', 'add', 'concat']:
         raise ValueError(f"Invalid pooling type: {config.model.pooling}")
@@ -407,11 +476,9 @@ def save_config(config: Config, save_path: Union[str, Path]) -> None:
     logger.info(f"Configuration saved to: {save_path}")
 
 
-# Example usage and testing
 if __name__ == "__main__":
     # Test configuration loading
     try:
-        # Load default config
         config = load_config("./base.yaml")
         print("Configuration loaded successfully!")
         print(f"Experiment: {config.experiment.name}_{config.experiment.seed}")
