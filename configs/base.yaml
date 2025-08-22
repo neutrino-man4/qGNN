@@ -22,8 +22,8 @@ data:
     - "/ceph/abal/QML/qGNN/merged/train/TTBar+ZJets_003.h5"
     - "/ceph/abal/QML/qGNN/merged/train/TTBar+ZJets_004.h5"
     - "/ceph/abal/QML/qGNN/merged/train/TTBar+ZJets_005.h5"
-    - "/ceph/abal/QML/qGNN/merged/train/TTBar+ZJets_006.h5"
-    - "/ceph/abal/QML/qGNN/merged/train/TTBar+ZJets_007.h5"
+    #- "/ceph/abal/QML/qGNN/merged/train/TTBar+ZJets_006.h5"
+    #- "/ceph/abal/QML/qGNN/merged/train/TTBar+ZJets_007.h5"
 
   val_files:
     - "/ceph/abal/QML/qGNN/merged/val/TTBar+ZJets_002.h5"
@@ -86,21 +86,21 @@ model:
   type: "correlation"  # "correlation" or "bilinear"
   
   # Message passing layers
-  num_mp_layers: 5
-  mp_hidden_layers: [12, 8,4]  # Hidden layer sizes for message passing MLPs
-  
+  num_mp_layers: 3
+  mp_hidden_layers: [32, 16, 12, 4]  # Hidden layer sizes for message passing MLPs
+
   # Final classifier
-  classifier_hidden_layers: [12, 8, 4]  # Hidden layer sizes for classification MLP
-  
+  classifier_hidden_layers: [16, 12, 8, 4]  # Hidden layer sizes for classification MLP
+
   # Architecture options
   pooling: "max"  # "mean", "max", "add", "concat"
-  activation: "silu"  # "elu", "relu", "gelu", "silu", "leaky_relu"
+  activation: "elu"  # "elu", "relu", "gelu", "silu", "leaky_relu"
   residual_connections: true  # Whether to use residual connections in MP layers
 
 # Training configuration
 training:
   num_epochs: 15
-  learning_rate: 0.001
+  learning_rate: 0.005
   optimizer: "adam"  # "adam", "adamw", "sgd"
   weight_decay: !!float 1e-4  # L2 regularization strength
   
@@ -127,7 +127,7 @@ validation:
 
 # Checkpointing and model saving
 checkpointing:
-  save_frequency: 10  # Save checkpoint every N epochs
+  save_frequency: 2  # Save checkpoint every N epochs
   save_best_only: false  # Whether to only save best model or keep all checkpoints
   best_metric: "auc"  # Use AUC to determine best model
   best_mode: "max"  # "max" for AUC
@@ -146,7 +146,7 @@ logging:
   console_output: true  # Whether to log to console
   file_output: true    # Whether to log to file
   log_filename: "training.log"  # Log file name (will be in experiment directory)
-  log_frequency: 10  # Log training metrics every N batches
+  log_frequency: 500  # Log training metrics every N batches
 
 # Testing/Inference configuration
 testing:
