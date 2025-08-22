@@ -498,7 +498,7 @@ def create_scheduler(optimizer: torch.optim.Optimizer, config: Any) -> Optional[
             mode=config.training.early_stopping.mode,
             factor=config.training.scheduler_factor,
             patience=config.training.scheduler_patience,
-            verbose=True
+            verbose=True,threshold=1e-2
         )
     elif scheduler_type == "step":
         scheduler = StepLR(

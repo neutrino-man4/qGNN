@@ -149,7 +149,7 @@ def main():
         # Setup experiment directory
         logger.info("Setting up experiment directory...")
         exp_dir = setup_experiment_directory(config,args.config)
-        #import pdb;pdb.set_trace()
+        
         # Setup logging to file
         setup_logging(config.experiment.name+'_'+config.experiment.seed, exp_dir)
         logger.info(f"Logging setup complete")
@@ -195,7 +195,9 @@ def main():
         logger.info(f"QFI correlations: {config.data.use_qfi_correlations}")
         
         # Create model
-        logger.info("Creating GNN model...")
+        logger.info(f"Creating GNN model of type: {config.model.type} ....")
+        extra_params = config.model.get_extra_config()
+        #import pdb;pdb.set_trace()
         model = create_jet_gnn(
             model_type=config.model.type,
             num_layers=config.model.num_mp_layers,
@@ -203,7 +205,8 @@ def main():
             classifier_hidden_layers=config.model.classifier_hidden_layers,
             pooling=config.model.pooling,
             activation=config.model.activation,
-            residual=config.model.residual_connections
+            residual=config.model.residual_connections,
+            **extra_params
         )
         
         # Move model to device
