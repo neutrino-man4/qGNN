@@ -11,27 +11,27 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing, global_mean_pool, global_max_pool, global_add_pool
 from torch_geometric.data import Data, Batch
-from typing import List, Optional, Union, Callable
+from typing import List, Optional, Union, Callable, Dict, Any
 from loguru import logger
-from src.layers import ConfigurableMLP, GlobalPooling, CorrelationMessagePassing, BilinearMessagePassing
-
+import src.layers as layers
 class JetGNN(nn.Module):
     """
     Complete Graph Neural Network for jet classification.
     
     Architecture:
-    1. Multiple message passing layers (Correlation or Bilinear)
+    1. Multiple message passing layers (Correlation, Bilinear, Conv1D, or GAT)
     2. Global pooling to create graph-level representation  
     3. Classification MLP for final prediction
     
     Args:
-        message_type: Type of message passing ('correlation' or 'bilinear')
+        message_type: Type of message passing ('correlation', 'uni-correlation', 'bilinear', 'conv1d', 'GAT')
         num_mp_layers: Number of message passing layers
         mp_mlp_layers: MLP architecture for message passing [input, hidden1, ..., output]
         classifier_layers: MLP architecture for final classifier [input, hidden1, ..., 2]
         pooling_type: Global pooling method ('mean', 'max', 'add', 'concat')
         activation: Activation function
         residual_connections: Whether to use residual connections in MP layers
+        extra_params: Dictionary containing type-specific parameters (for GAT, Conv1D)
     """
     
     def __init__(
@@ -42,7 +42,9 @@ class JetGNN(nn.Module):
         classifier_layers: List[int] = [3, 16, 8, 4, 2],  # [input, hidden, ..., 2]
         pooling_type: str = 'mean',
         activation: Union[str, nn.Module] = 'elu',
-        residual_connections: bool = True
+        residual_connections: bool = True,
+        conv_out_channels: int = None,  # Deprecated - use extra_params instead
+        extra_params: Dict[str, Any] = None
     ):
         super().__init__()
         
@@ -53,6 +55,16 @@ class JetGNN(nn.Module):
         self.message_type = message_type.lower()
         self.num_mp_layers = num_mp_layers
         self.residual_connections = residual_connections
+        
+        # Handle extra parameters
+        if extra_params is None:
+            extra_params = {}
+        self.extra_params = extra_params
+        
+        # Backward compatibility for conv_out_channels
+        if conv_out_channels is not None and 'out_channels' not in extra_params:
+            extra_params['out_channels'] = conv_out_channels
+            logger.warning("conv_out_channels is deprecated, use extra_params instead")
         
         # Handle activation function
         if isinstance(activation, str):
@@ -72,33 +84,83 @@ class JetGNN(nn.Module):
             self.activation = activation
             logger.debug(f"Using custom activation function: {type(activation).__name__}")
         
-        # Validate message passing architecture
-        if self.message_type == 'correlation' and mp_mlp_layers[0] != 9:
+        # Validate message passing architecture for traditional types
+        if self.message_type.lower() == 'correlation' and mp_mlp_layers[0] != 9:
             logger.warning(f"Adjusting MP input dimension from {mp_mlp_layers[0]} to 9 for correlation message passing")
             mp_mlp_layers[0] = 9
-        elif self.message_type == 'bilinear' and mp_mlp_layers[0] != 7:
+        elif self.message_type.lower() == 'uni-correlation' and mp_mlp_layers[0] != 15:
+            logger.warning(f"Adjusting MP input dimension from {mp_mlp_layers[0]} to 15 for uni-correlation message passing")
+            mp_mlp_layers[0] = 15
+        elif self.message_type.lower() == 'bilinear' and mp_mlp_layers[0] != 7:
             logger.warning(f"Adjusting MP input dimension from {mp_mlp_layers[0]} to 7 for bilinear message passing")
             mp_mlp_layers[0] = 7
-        
+        elif self.message_type.lower() == 'conv1d' and 'out_channels' not in extra_params:
+            logger.warning(f"Setting out_channels to 4 for conv1d message passing")
+            extra_params['out_channels'] = 4
+
         # Ensure MP layers output 3D features (same as input) for residual connections
         if self.residual_connections and mp_mlp_layers[-1] != 3:
             logger.warning(f"For residual connections, adjusting MP output from {mp_mlp_layers[-1]} to 3")
             mp_mlp_layers[-1] = 3
         
+        # GAT always outputs 3D due to internal MLP
+        if self.message_type.lower() == 'gat':
+            logger.info("GAT layers always output 3D features due to internal MLP projection")
+        
         # Create message passing layers
         self.mp_layers = nn.ModuleList()
         for i in range(num_mp_layers):
             logger.debug(f"Creating message passing layer {i+1}/{num_mp_layers}")
-            if self.message_type == 'correlation':
-                mp_layer = CorrelationMessagePassing(
+            
+            if self.message_type.lower() == 'correlation':
+                mp_layer = layers.CorrelationMessagePassing(
                     mlp_layers=mp_mlp_layers.copy(),
                     activation=self.activation
                 )
-            elif self.message_type == 'bilinear':
-                mp_layer = BilinearMessagePassing(
+            elif self.message_type.lower() == 'uni-correlation':
+                mp_layer = layers.UniCorrelationMessagePassing(
+                    mlp_layers=mp_mlp_layers.copy(),
+                    activation=self.activation
+                )
+            elif self.message_type.lower() == 'bilinear':
+                mp_layer = layers.BilinearMessagePassing(
                     mlp_layers=mp_mlp_layers.copy(), 
                     activation=self.activation
                 )
+            elif self.message_type.lower() == 'conv1d':
+                mp_layer = layers.Conv1DMessagePassing(
+                    mlp_layers=mp_mlp_layers.copy(),
+                    activation=self.activation,
+                    **extra_params  # Pass Conv1D-specific parameters
+                )
+            elif self.message_type.lower() == 'gat':
+                # For GAT, we need in_channels and out_channels
+                in_channels = 3  # Always 3D particle features
+                out_channels = extra_params.get('out_channels', 4)  # Default per-head dimension
+
+                gat_mlp_layers = mp_mlp_layers.copy()
+                # If residual connections = True, the last layer should have 3 nodes. 
+                # Already taken care of before, just a reminder to anyone reading this here :)
+
+                # Extract GAT-specific parameters
+                
+                gat_params = {
+                    'heads': extra_params.get('heads', 8),
+                    'concat': extra_params.get('concat', True),
+                    'dropout': extra_params.get('dropout', 0.1),
+                    'bias': extra_params.get('bias', True),
+                    'negative_slope': extra_params.get('negative_slope', 0.2),
+                    'correlation_mode': extra_params.get('correlation_mode', 'frobenius'),
+                    'mlp_layers': gat_mlp_layers,  # Use derived MLP layers
+                    'activation': self.activation
+                }
+
+                mp_layer = layers.CorrelationModulatedGAT(
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    **gat_params
+                )
+                logger.info(f"Created GAT layer with in_channels={in_channels}, out_channels={out_channels}, heads={gat_params['heads']}, Correlation Mode: {gat_params['correlation_mode']}")
             else:
                 logger.error(f"Unsupported message type: {self.message_type}")
                 raise ValueError(f"Unsupported message type: {self.message_type}")
@@ -107,14 +169,20 @@ class JetGNN(nn.Module):
         
         # Global pooling
         logger.debug(f"Creating global pooling with type: {pooling_type}")
-        self.pooling = GlobalPooling(pooling_type)
+        self.pooling = layers.GlobalPooling(pooling_type)
+
+        # Determine output dimension from last MP layer
+        if self.message_type in ['gat']:
+            mp_output_dim = 3  # GAT always outputs 3D
+        else:
+            mp_output_dim = mp_mlp_layers[-1]
         
         # Adjust classifier input dimension based on pooling
         if pooling_type == 'concat':
-            classifier_input_dim = mp_mlp_layers[-1] * 2
+            classifier_input_dim = mp_output_dim * 2
             logger.debug(f"Using concat pooling, classifier input dim: {classifier_input_dim}")
         else:
-            classifier_input_dim = mp_mlp_layers[-1]
+            classifier_input_dim = mp_output_dim
         
         if classifier_layers[0] != classifier_input_dim:
             logger.warning(f"Adjusting classifier input dimension from {classifier_layers[0]} to {classifier_input_dim}")
@@ -122,7 +190,7 @@ class JetGNN(nn.Module):
         
         # Final classifier
         logger.debug(f"Creating classifier with layers: {classifier_layers}")
-        self.classifier = ConfigurableMLP(
+        self.classifier = layers.ConfigurableMLP(
             layer_sizes=classifier_layers,
             activation=self.activation,
             dropout=0.1  # Add some regularization in classifier
@@ -136,13 +204,16 @@ class JetGNN(nn.Module):
             'classifier_layers': classifier_layers,
             'pooling_type': pooling_type,
             'activation': str(self.activation),
-            'residual_connections': residual_connections
+            'residual_connections': residual_connections,
+            'extra_params': extra_params.copy()
         }
         
         # Log model summary
         total_params = sum(p.numel() for p in self.parameters())
         logger.info(f"JetGNN created successfully with {total_params:,} total parameters")
         logger.info(f"Architecture: {num_mp_layers} MP layers, {pooling_type} pooling, residual={residual_connections}")
+        if extra_params:
+            logger.debug(f"Extra parameters: {extra_params}")
     
     def forward(self, data: Union[Data, Batch]) -> torch.Tensor:
         """
@@ -195,20 +266,23 @@ def create_jet_gnn(
     classifier_hidden_layers: List[int] = [16, 8, 4], 
     pooling: str = 'mean',
     activation: str = 'elu',
-    residual: bool = True
+    residual: bool = True,
+    conv_out_channels: int = None,  # Deprecated
+    **kwargs  # This captures extra parameters from config
 ) -> JetGNN:
     """
     Factory function to create JetGNN models with simplified configuration.
-    Just for abstraction, nothing too complex to see here
     
     Args:
-        model_type: 'correlation' or 'bilinear'
+        model_type: 'correlation', 'uni-correlation', 'bilinear', 'conv1d', 'GAT'
         num_layers: Number of message passing layers
         mp_hidden_layers: Hidden layer sizes for MP MLPs [hidden1, hidden2, ...]
         classifier_hidden_layers: Hidden layer sizes for classifier [hidden1, ..., hidden_final]
         pooling: Global pooling type ('mean', 'max', 'add', 'concat')
         activation: Activation function name
         residual: Whether to use residual connections
+        conv_out_channels: Deprecated - use kwargs instead
+        **kwargs: Extra parameters for specific message passing types (GAT, Conv1D)
     
     Returns:
         Configured JetGNN model
@@ -217,39 +291,68 @@ def create_jet_gnn(
         # Simple correlation-based model
         model = create_jet_gnn('correlation', num_layers=3, mp_hidden_layers=[16, 8])
 
-        # Bilinear model with different architecture
-        model = create_jet_gnn('bilinear', mp_hidden_layers=[32, 16, 8], classifier_hidden_layers=[32, 16, 8])
+        # GAT model with specific parameters
+        model = create_jet_gnn('GAT', heads=8, correlation_mode='frobenius', mlp_layers=[64, 32])
+        
+        # Conv1D model with specific parameters
+        model = create_jet_gnn('conv1d', out_channels=4, kernel_size=5)
     """
     
-    logger.info(f"🏗️ Creating {model_type} JetGNN with factory function")
+    logger.info(f"Creating {model_type} JetGNN with factory function")
     logger.debug(f"Config: layers={num_layers}, mp_hidden={mp_hidden_layers}, pooling={pooling}")
+    if kwargs:
+        logger.debug(f"Extra parameters: {kwargs}")
     
-    # Determine input dimensions based on model type
-    if model_type.lower() == 'correlation':
+    model_type_lower = model_type.lower()
+    
+    # Determine input dimensions and build MP layers for traditional message passing
+    if model_type_lower == 'correlation':
         mp_input_dim = 9  # [x_i, x_j, C_ji @ x_j] = [3 + 3 + 3]
+        mp_mlp_layers = [mp_input_dim] + mp_hidden_layers + [3]
         logger.debug("Using correlation message passing (input_dim=9)")
-    elif model_type.lower() == 'bilinear':
+        
+    elif model_type_lower == 'uni-correlation':
+        mp_input_dim = 15  # [x_i, x_j, C_ji ] = [3 + 3 + 9]
+        mp_mlp_layers = [mp_input_dim] + mp_hidden_layers + [3]
+        logger.debug("Using uni-correlation message passing (input_dim=15)")
+        
+    elif model_type_lower == 'bilinear':
         mp_input_dim = 7  # [x_i, x_j, bilinear_term] = [3 + 3 + 1]
+        mp_mlp_layers = [mp_input_dim] + mp_hidden_layers + [3]
         logger.debug("Using bilinear message passing (input_dim=7)")
+        
+    elif model_type_lower == 'conv1d':
+        # For conv1d, MLP layers are handled internally
+        mp_mlp_layers = mp_hidden_layers
+        logger.debug("Using 1D convolutional message passing")
+        
+    elif model_type_lower == 'gat':
+        mp_mlp_layers = mp_hidden_layers  
+        logger.debug("Using GAT message passing")
+        
     else:
         logger.error(f"Unsupported model type: {model_type}")
         raise ValueError(f"Unsupported model type: {model_type}")
     
-    # Build MP MLP layers: [input, hidden1, hidden2, ..., 3]
-    mp_mlp_layers = [mp_input_dim] + mp_hidden_layers + [3]
     logger.debug(f"MP MLP architecture: {mp_mlp_layers}")
     
     # Determine classifier input dimension
     if pooling == 'concat':
-        classifier_input_dim = 6  # mean + max pooling
+        classifier_input_dim = 6  # mean + max pooling (always 3D output)
         logger.debug("Using concat pooling (classifier_input_dim=6)")
     else:
-        classifier_input_dim = 3
+        classifier_input_dim = 3  # All message passing types output 3D
         logger.debug(f"Using {pooling} pooling (classifier_input_dim=3)")
     
     # Build classifier layers: [input, hidden1, hidden2, ..., 2]
     classifier_layers = [classifier_input_dim] + classifier_hidden_layers + [2]
     logger.debug(f"Classifier architecture: {classifier_layers}")
+    
+    # Handle backward compatibility
+    extra_params = kwargs.copy()
+    if conv_out_channels is not None:
+        extra_params['out_channels'] = conv_out_channels
+        logger.warning("conv_out_channels is deprecated, use **kwargs instead")
     
     # Create and return model
     model = JetGNN(
@@ -259,11 +362,13 @@ def create_jet_gnn(
         classifier_layers=classifier_layers,
         pooling_type=pooling,
         activation=activation,
-        residual_connections=residual
+        residual_connections=residual,
+        extra_params=extra_params
     )
     
-    logger.success(f"✅ JetGNN model created successfully!")
+    logger.success(f"JetGNN model created successfully!")
     return model
+
 
 
 # Model parameter counting utility
@@ -290,7 +395,7 @@ def count_parameters(model: nn.Module) -> dict:
 
 if __name__ == "__main__":
     # Example usage and testing
-    logger.info("🧪 Testing JetGNN Models")
+    logger.info("Testing JetGNN Models")
     
     # Create sample data (compatible with dataloader output)
     batch_size = 32
@@ -332,7 +437,7 @@ if __name__ == "__main__":
     ]
     
     for config in configs:
-        logger.info(f"🔬 Testing: {config['name']}")
+        logger.info(f"Testing: {config['name']}")
         model = config['model']
         
         # Forward pass
@@ -343,9 +448,9 @@ if __name__ == "__main__":
         param_info = count_parameters(model)
         arch_info = model.get_architecture_info()
         
-        logger.info(f"   ✅ Output shape: {output.shape}")
-        logger.info(f"   📊 Parameters: {param_info['trainable_parameters']:,}")
-        logger.info(f"   💾 Model size: {param_info['model_size_mb']} MB")
-        logger.info(f"   🏗️ Architecture: {arch_info['num_mp_layers']} MP layers, {arch_info['pooling_type']} pooling")
+        logger.info(f"Output shape: {output.shape}")
+        logger.info(f"Parameters: {param_info['trainable_parameters']:,}")
+        logger.info(f"Model size: {param_info['model_size_mb']} MB")
+        logger.info(f"Architecture: {arch_info['num_mp_layers']} MP layers, {arch_info['pooling_type']} pooling")
     
-    logger.success("🎉 All model tests completed successfully!")
+    logger.success("All model tests completed successfully!")
