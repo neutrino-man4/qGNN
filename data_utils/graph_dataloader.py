@@ -104,7 +104,7 @@ class StreamingJetDataLoader:
         """Read a batch of jets from current file."""
         # Read batch data at once
         node_features = self.current_file['jetConstituentsList'][start_idx:end_idx]  # [batch, 10, 3]
-        qfi_matrices = self.current_file['jetConstituentsQFI'][start_idx:end_idx]    # [batch, 30, 30]
+        qfi_matrices = 4*self.current_file['jetConstituentsQFI'][start_idx:end_idx]    # [batch, 30, 30], the multiplication by 4 is to bring the bounds to [-1,1]
         labels = self.current_file['truth_labels'][start_idx:end_idx]               # [batch]
         jet_pts = self.current_file['jetFeatures'][start_idx:end_idx, 0]           # [batch]
         
@@ -123,7 +123,7 @@ class StreamingJetDataLoader:
                 edge_attr = self._extract_edge_features(qfi_matrices[i])  # [100, 9]
             else:
                 # Identity baseline
-                identity_flat = torch.tensor([1, 0, 0, 0, 1, 0, 0, 0, 1], dtype=torch.float32)
+                identity_flat = torch.tensor([0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=torch.float32) # zero matrix for baseline, use only x_i and x_j for the message
                 edge_attr = identity_flat.repeat(100, 1)  # [100, 9]
             
             # Label
