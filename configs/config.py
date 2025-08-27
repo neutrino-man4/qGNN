@@ -38,7 +38,6 @@ class DataConfig:
     use_qfi_correlations: bool = True
     num_workers: int = 8
     pin_memory: bool = True
-    test_n: int = 1000
 
 
 @dataclass
@@ -152,6 +151,9 @@ class TestingConfig:
     save_predictions: bool = True
     predictions_file: str = "test_predictions.csv"
     metrics_file: str = "test_metrics.json"
+    output_dir: str = "/ceph/abal/QML/qGNN/merged/inferred"
+    desc: str = "Placeholder text for test runs"
+    test_n: int = 10000
 
 
 @dataclass
@@ -261,7 +263,6 @@ def _create_data_config(data: dict) -> DataConfig:
         use_qfi_correlations=data.get('use_qfi_correlations', True),
         num_workers=data.get('num_workers', 8),
         pin_memory=data.get('pin_memory', True),
-        test_n=data.get('test_n', 1000)
     )
 
 
@@ -370,7 +371,10 @@ def _create_testing_config(data: dict) -> TestingConfig:
         batch_size=data.get('batch_size', 128),
         save_predictions=data.get('save_predictions', True),
         predictions_file=data.get('predictions_file', 'test_predictions.csv'),
-        metrics_file=data.get('metrics_file', 'test_metrics.json')
+        metrics_file=data.get('metrics_file', 'test_metrics.json'),
+        output_dir=data.get('output_dir', '/ceph/abal/QML/qGNN/merged/inferred'),
+        desc=data.get('desc', 'Placeholder text for test runs'),
+        test_n=data.get('test_n', 1000)
     )
 
 
