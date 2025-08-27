@@ -129,7 +129,7 @@ class JetGNN(nn.Module):
                 )
             elif self.message_type.lower() == 'conv1d':
                 mp_layer = layers.Conv1DMessagePassing(
-                    mlp_layers=mp_mlp_layers.copy(),
+                    #mlp_layers=mp_mlp_layers.copy(),
                     activation=self.activation,
                     **extra_params  # Pass Conv1D-specific parameters
                 )
