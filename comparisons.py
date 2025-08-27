@@ -35,7 +35,8 @@ class ExperimentLoader:
         self.experiment_dir = Path(experiment_dir)
         self.config = self._load_config()
         self.y_true, self.y_pred_proba = self._load_predictions()
-        
+        self.training_history = self._load_training_history()
+
     def _load_config(self) -> Config:
         """Load experiment configuration using the project's config system."""
         config_file = self.experiment_dir / "config.yaml"
@@ -136,7 +137,28 @@ class ExperimentLoader:
     def has_valid_predictions(self) -> bool:
         """Check if predictions are available and valid."""
         return len(self.y_true) > 0 and len(self.y_pred_proba) > 0 and len(self.y_true) == len(self.y_pred_proba)
+    
+    def _load_training_history(self) -> Dict[str, List[float]]:
+        """Load training history from JSON file."""
+        history_file = self.experiment_dir / "training_history.json"
+    
+        if not history_file.exists():
+            logger.warning(f"Training history file not found: {history_file}")
+            return {}
+        
+        try:
+            import json
+            with open(history_file, 'r') as f:
+                history = json.load(f)
+            logger.info(f"Loaded training history from: {history_file}")
+            return history
+        except Exception as e:
+            logger.error(f"Error loading training history from {history_file}: {e}")
+            return {}
 
+    def get_training_history(self) -> Dict[str, List[float]]:
+        """Get training history data."""
+        return getattr(self, 'training_history', {})
 
 class ExperimentComparison:
     """Compare multiple experiments with visualizations."""
@@ -340,6 +362,73 @@ class ExperimentComparison:
         self._save_plot("SIC")
         plt.clf()
     
+    def plot_training_curves(self):
+        """Plot training evolution curves for all experiments."""
+        # Check if any experiment has training history
+        has_history = any(exp.get_training_history() for exp in self.experiments)
+        if not has_history:
+            logger.warning("No training history found for any experiment. Skipping training curves.")
+            return
+        
+        fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+        
+        # AUC Evolution
+        for exp in self.experiments:
+            history = exp.get_training_history()
+            if 'val_auc' in history and history['val_auc']:
+                epochs = range(1, len(history['val_auc']) + 1)
+                axes[0].plot(epochs, history['val_auc'], linewidth=2, 
+                            label=exp.get_legend_label(), marker='o', markersize=4)
+        
+        axes[0].set_xlabel('Epoch', fontsize=17)
+        axes[0].set_ylabel('Validation AUC', fontsize=17)
+        axes[0].set_title('AUC Evolution', fontsize=19, fontweight='bold')
+        axes[0].legend(fontsize=12)
+        axes[0].grid(True, alpha=0.3)
+        axes[0].set_ylim([0.5, 1.0])
+        
+        # Loss Evolution
+        for exp in self.experiments:
+            history = exp.get_training_history()
+            if 'train_loss' in history and 'val_loss' in history:
+                epochs = range(1, len(history['train_loss']) + 1)
+                label = exp.get_legend_label()
+                axes[1].plot(epochs, history['train_loss'], linewidth=2, 
+                            label=f'{label} (Train)', linestyle='-', marker='o', markersize=3)
+                axes[1].plot(epochs, history['val_loss'], linewidth=2, 
+                            label=f'{label} (Val)', linestyle='--', marker='s', markersize=3)
+        
+        axes[1].set_xlabel('Epoch', fontsize=17)
+        axes[1].set_ylabel('Loss', fontsize=17)
+        axes[1].set_title('Loss Evolution', fontsize=19, fontweight='bold')
+        axes[1].legend(fontsize=10)
+        axes[1].grid(True, alpha=0.3)
+        axes[1].set_yscale('log')
+        
+        # Accuracy Evolution
+        for exp in self.experiments:
+            history = exp.get_training_history()
+            if 'train_accuracy' in history and 'val_accuracy' in history:
+                epochs = range(1, len(history['train_accuracy']) + 1)
+                label = exp.get_legend_label()
+                axes[2].plot(epochs, history['train_accuracy'], linewidth=2, 
+                            label=f'{label} (Train)', linestyle='-', marker='o', markersize=3)
+                axes[2].plot(epochs, history['val_accuracy'], linewidth=2, 
+                            label=f'{label} (Val)', linestyle='--', marker='s', markersize=3)
+        
+        axes[2].set_xlabel('Epoch', fontsize=17)
+        axes[2].set_ylabel('Accuracy', fontsize=17)
+        axes[2].set_title('Accuracy Evolution', fontsize=19, fontweight='bold')
+        axes[2].legend(fontsize=10)
+        axes[2].grid(True, alpha=0.3)
+        axes[2].set_ylim([0.5, 1.0])
+        
+        plt.tight_layout()
+        
+        # Save in both formats
+        self._save_plot("training_curves", fig)
+        plt.clf()
+
     def plot_metrics_comparison(self):
         """Plot bar chart comparing key metrics."""
         labels = [exp.get_legend_label() for exp in self.experiments]
@@ -407,7 +496,7 @@ class ExperimentComparison:
         self.plot_precision_recall_curves()
         self.plot_sic_curves()
         self.plot_metrics_comparison()
-        
+        self.plot_training_curves() 
         # Generate text report
         report_filename = f"{self.filename_prefix}_report.txt"
         report_path = self.output_dir / report_filename
