@@ -136,7 +136,7 @@ class JetGNNTrainer:
         self.training_history = {
             'train_loss': [], 'train_accuracy': [],
             'val_loss': [], 'val_accuracy': [], 'val_auc': [],
-            'learning_rates': []
+            'learning_rates': [], 'train_stream_loss': [], 'train_stream_accuracy': []
         }
         
         logger.info(f"Trainer initialized - Device: {device}")
