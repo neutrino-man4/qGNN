@@ -200,7 +200,7 @@ def run_inference_vectorized(model: torch.nn.Module, batches: List[Batch],
 
 def save_predictions_h5(test_files: List[str], file_indices: np.ndarray, jet_indices: np.ndarray,
                        true_labels: np.ndarray, predictions: np.ndarray, probabilities: np.ndarray,
-                       results_dir: Path):
+                       output_dir: Path):
     """Save predictions to H5 files with naming convention."""
     logger.info("Saving predictions to H5 files...")
     
@@ -223,7 +223,6 @@ def save_predictions_h5(test_files: List[str], file_indices: np.ndarray, jet_ind
         input_filename = os.path.basename(input_path)
         
         # Replace directory: test -> inferred
-        output_dir = input_dir.replace('/test', '/inferred')
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         
         # Replace filename pattern
@@ -366,12 +365,6 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument(
-        "--config", 
-        type=str, 
-        default="./configs/base.yaml",
-        help="Path to configuration YAML file"
-    )
-    parser.add_argument(
         "--experiment-dir", 
         type=str, 
         required=True,
@@ -402,12 +395,13 @@ def main():
         # Load test data (vectorized)
         node_features, edge_features, true_labels, file_indices, jet_indices = load_test_data_vectorized(
             config.data.test_files,
-            config.data.test_n,
+            config.testing.test_n,
             config.data.use_qfi_correlations
         )
         
         # Create model
         logger.info("Creating model...")
+        extra_params = config.model.get_extra_config()
         model = create_jet_gnn(
             model_type=config.model.type,
             num_layers=config.model.num_mp_layers,
@@ -415,7 +409,7 @@ def main():
             classifier_hidden_layers=config.model.classifier_hidden_layers,
             pooling=config.model.pooling,
             activation=config.model.activation,
-            residual=config.model.residual_connections
+            residual=config.model.residual_connections, **extra_params
         )
         model = model.to(device)
         
@@ -469,14 +463,15 @@ def main():
         
         # Save predictions to H5 files
         if config.testing.save_predictions:
+            output_dir=os.path.join(config.testing.output_dir,f"{config.experiment.name}_{config.experiment.seed}")
             save_predictions_h5(
                 config.data.test_files, file_indices, jet_indices,
-                true_labels, predictions, probabilities, results_dir
+                true_labels, predictions, probabilities, output_dir
             )
         
         logger.success("Testing completed successfully!")
         logger.info(f"All results saved in: {results_dir}")
-        
+
     except FileNotFoundError as e:
         logger.error(f"File not found: {e}")
         return 1
