@@ -89,11 +89,10 @@ def setup_experiment_directory(config,config_path) -> Path:
     Path(exp_dir).mkdir(parents=True, exist_ok=True)
 
     # Save config copy to experiment directory
-    config_copy_path = os.path.join(config.experiment.base_save_dir, "config.yaml")
+    config_copy_path = os.path.join(exp_dir, "config.yaml")
     # do the copy with subprocess
     import subprocess
     subprocess.run(["cp", config_path, config_copy_path])
-    
     logger.info(f"Experiment directory: {exp_dir}")
     return exp_dir
 
