@@ -267,12 +267,27 @@ class JetGNNTrainer:
                 )
         
         # Calculate epoch metrics
-        avg_loss = total_loss / num_batches
-        accuracy = total_correct / total_samples
+        # iterate over train_loader and compute train metrics, with model in eval mode
+        self.model.eval()
+        logger.info("Quick pass to get the training loss")
+        train_loss_real = 0.0
+        train_correct = 0
+        with torch.no_grad():
+            for batch_idx, batch in enumerate(tqdm(self.train_loader, desc="Training Loss calculation", total=num_batches)):
+                batch = batch.to(self.device)
+                logits = self.model(batch)
+                loss = F.cross_entropy(logits, batch.y)
+                train_loss_real += loss.item()
+                predictions = torch.argmax(logits, dim=1)
+                train_correct += (predictions == batch.y).sum().item()
+        avg_loss = train_loss_real / num_batches
+        accuracy = train_correct / total_samples
         
         return {
             'loss': avg_loss,
-            'accuracy': accuracy
+            'accuracy': accuracy,
+            'stream_loss': total_loss / num_batches,
+            'stream_accuracy': total_correct / total_samples
         }
     
     def validate_epoch(self) -> Dict[str, float]:
@@ -312,7 +327,7 @@ class JetGNNTrainer:
                 all_predictions.extend(predictions.cpu().numpy())
                 all_probabilities.extend(probabilities.cpu().numpy())
                 all_labels.extend(batch.y.cpu().numpy())
-        
+            
         # Calculate metrics
         avg_loss = total_loss / num_batches
         accuracy = total_correct / total_samples
@@ -338,7 +353,9 @@ class JetGNNTrainer:
         self.training_history['val_accuracy'].append(val_metrics['accuracy'])
         self.training_history['val_auc'].append(val_metrics['auc'])
         self.training_history['learning_rates'].append(self.optimizer.param_groups[0]['lr'])
-    
+        self.training_history['train_stream_loss'].append(train_metrics['stream_loss'])
+        self.training_history['train_stream_accuracy'].append(train_metrics['stream_accuracy'])
+        
     def _log_epoch_results(self, epoch: int, train_metrics: Dict[str, float], val_metrics: Dict[str, float]) -> None:
         """Log comprehensive epoch results."""
         current_lr = self.optimizer.param_groups[0]['lr']
