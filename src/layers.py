@@ -332,11 +332,11 @@ class Conv1DMessagePassing(MessagePassing):
         super().__init__(aggr=aggr)
         
         # Input dimension: x_i (3) + x_j (3) + C_ji (9) = 15
-        self.input_dim = 15
+        self.input_dim = 9
         self.out_channels = out_channels
         self.kernel_size = kernel_size
         self.mlp_layers = mlp_layers
-        # 1D Convolution: treats 15 features as sequence
+        # 1D Convolution: treats 9 features as sequence
         self.conv1d = nn.Conv1d(
             in_channels=1, 
             out_channels=out_channels, 
@@ -353,12 +353,16 @@ class Conv1DMessagePassing(MessagePassing):
         self.mlp_layers = [conv_output_dim] + mlp_layers + [3]
         self.output_dim = 3
         self.activation = activation
-        
+        self.edge_mlp = ConfigurableMLP(
+            layer_sizes=[9, 16, 8, 4, 3],
+            activation=self.activation
+        )
         self.final_mlp = ConfigurableMLP(
             layer_sizes=self.mlp_layers,
             activation=self.activation
         )
-        
+        self.temperature = nn.Parameter(torch.Tensor(3)) # Shape: 3,
+        nn.init.constant(self.temperature, 0.0)
         logger.info(f"Conv1DMessagePassing: out_channels={out_channels}, kernel_size={kernel_size}, "
                    f"conv_output_dim={conv_output_dim}, final_dim=3, mlp_layers={mlp_layers}")
     
@@ -387,7 +391,7 @@ class Conv1DMessagePassing(MessagePassing):
             Messages [E, output_dim]
         """
         # Concatenate all features: [x_i, x_j, C_ji]
-        message_input = torch.cat([x_i, x_j, edge_attr], dim=-1)  # [E, 15]
+        message_input = torch.cat([x_i, x_j, self.temperature*self.edge_mlp(edge_attr)], dim=-1)  # [E, 15]
         
         # Reshape for Conv1d: [batch, channels, sequence]
         conv_input = message_input.unsqueeze(1)  # [E, 1, 15]
@@ -463,7 +467,7 @@ class CorrelationModulatedGAT(MessagePassing):
 
         # Learnable temperature parameter λ for correlation modulation
         self.lambda_param = nn.Parameter(torch.Tensor(self.heads, 1))
-        self.edge_lambda_param = nn.Parameter(torch.Tensor(self.heads, 1))
+        self.edge_lambda_param = nn.Parameter(torch.Tensor(1, self.heads))
         # Determine MLP input dimension
         if concat:
             mlp_input_dim = self.heads * out_channels
@@ -593,24 +597,24 @@ class CorrelationModulatedGAT(MessagePassing):
         e_ij = F.leaky_relu(e_ij, self.negative_slope)
         
         # Extract correlation coefficient from edge attributes
-        C_ij = self._extract_correlation(edge_attr).squeeze()  # [E,] --> get rid of extra dimensions: the correlation feature here is the norm (whether frobenius or other)
-        edge_lambda_broadcast = self.edge_lambda_param.transpose(0, 1)  # [1, heads]
-        edge_value = edge_lambda_broadcast * self.edge_mlp(edge_attr)  # [E, heads]
+        #C_ij = self._extract_correlation(edge_attr).squeeze()  # [E,] --> get rid of extra dimensions: the correlation feature here is the norm (whether frobenius or trace or scalar or whatever)
+        edge_lambda_broadcast = self.edge_lambda_param  # [1, heads]
+        edge_value_ij = edge_lambda_broadcast * self.edge_mlp(edge_attr)  # [E, heads]
 
         # Modulate attention with correlation: e_ij + λ * C_ij
         # Broadcast λ and C_ij to match attention dimensions
-        lambda_broadcast = self.lambda_param.transpose(0, 1)  # [1, heads]
-        C_ij_broadcast = C_ij.unsqueeze(1)  # [E, 1]
+        #lambda_broadcast = self.lambda_param.transpose(0, 1)  # [1, heads]
+        #C_ij_broadcast = C_ij.unsqueeze(1)  # [E, 1]
 
-        modulated_attention = e_ij + C_ij_broadcast*lambda_broadcast*10  # [E, heads]
-
+        modulated_attention = edge_value_ij #e_ij  # [E, heads]
+        
         # Compute attention coefficients using softmax
         alpha = softmax(modulated_attention, index, ptr, size_i)  # [E, heads]
         alpha = F.dropout(alpha, p=self.dropout, training=self.training)
         # Compute messages: m_ij = α_ij * W_v * x_j
         alpha_expanded = alpha.unsqueeze(-1)  # [E, heads, 1]
-        messages = alpha_expanded * value_j  # [E, heads, out_channels]
-        
+        messages = alpha_expanded * value_j # [E, heads, out_channels]
+
         return messages
     
     def _extract_correlation(self, edge_attr: torch.Tensor) -> torch.Tensor:
