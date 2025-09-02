@@ -648,3 +648,94 @@ class CorrelationModulatedGAT(MessagePassing):
         return (f'{self.__class__.__name__}({self.in_channels}, '
                 f'{self.out_channels}, heads={self.heads}, '
                 f'correlation_mode={self.correlation_mode})')
+
+
+class FixedCorrelationMessage(MessagePassing):
+    """
+    Fixed (non-learnable) message passing using correlation matrices and kinematic features.
+    
+    Computes kinematic variables (z_ij, Δη, Δφ, ΔR) from particle physics features
+    and applies QFI correlation matrices to create 7-dimensional messages without 
+    any trainable parameters.
+    
+    Args:
+        aggr: Aggregation method ('add', 'mean', 'max')
+    """
+    
+    def __init__(self, aggr: str = 'add'):
+        super().__init__(aggr=aggr)
+        logger.info(f"Creating FixedCorrelationMessage with aggregation: {aggr}")
+    
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Node features [N, 3] - [pt_fraction, eta_rel, phi_rel]
+            edge_index: Edge connectivity [2, E]
+            edge_attr: Edge features [E, 9] (flattened 3x3 QFI matrices)
+        
+        Returns:
+            Updated node features [N, 7]
+        """
+        return self.propagate(edge_index, x=x, edge_attr=edge_attr)
+    
+    def message(self, x_i: torch.Tensor, x_j: torch.Tensor, edge_attr: torch.Tensor) -> torch.Tensor:
+        """
+        Compute fixed correlation messages using kinematic variables and QFI matrices.
+        
+        Args:
+            x_i: Target node features [E, 3] - [pt_i/pt_jet, eta_i - eta_jet, phi_i - phi_jet]
+            x_j: Source node features [E, 3] - [pt_j/pt_jet, eta_j - eta_jet, phi_j - phi_jet]
+            edge_attr: Edge features [E, 9] (flattened 3x3 QFI correlation matrices)
+        
+        Returns:
+            Messages [E, 7] - [z_ij, delta_eta_norm, sin_delta_phi_norm, delta_R_ij, rotated_1, rotated_2, rotated_3]
+        """
+        # Extract kinematic features
+        pt_i, eta_i, phi_i = x_i[:, 0], x_i[:, 1], x_i[:, 2]
+        pt_j, eta_j, phi_j = x_j[:, 0], x_j[:, 1], x_j[:, 2]
+        
+        # 1. Calculate z_ij = abs(pt_i - pt_j) / (pt_i + pt_j + 1e-4)
+        # Using pt fractions directly as they will cancel out
+        z_ij = torch.abs(pt_i - pt_j) / (pt_i + pt_j + 1e-4)
+        
+        # 2. Calculate delta_eta_ij = eta_i - eta_j (using relative eta)
+        delta_eta_ij = eta_i - eta_j
+        
+        # 3. Calculate delta_phi_ij with proper wrapping to (-π, π)
+        delta_phi_ij = phi_i - phi_j
+        # Wrap to (-π, π) range
+        delta_phi_ij = torch.remainder(delta_phi_ij + torch.pi, 2 * torch.pi) - torch.pi
+        
+        # 4. Calculate delta_R_ij = sqrt(delta_eta^2 + delta_phi^2)
+        delta_R_ij = torch.sqrt(delta_eta_ij**2 + delta_phi_ij**2)
+        
+        # Calculate normalized kinematic features with (1 + delta_R_ij)^3 normalization
+        normalization_factor = (1 + delta_R_ij)**3
+        delta_eta_normalized = delta_eta_ij / normalization_factor
+        sin_delta_phi_normalized = torch.sin(delta_phi_ij) / normalization_factor
+        
+        # Create base 3D kinematic feature vector
+        base_features = torch.stack([
+            z_ij, 
+            delta_eta_normalized, 
+            sin_delta_phi_normalized
+        ], dim=-1)  # [E, 3]
+        
+        # Reshape edge_attr to recover 3x3 QFI correlation matrices
+        C_ij = edge_attr.view(-1, 3, 3)  # [E, 3, 3]
+        
+        # Apply correlation matrix to base features: C_ij @ base_features
+        # This creates the "rotated" version using the QFI correlation
+        rotated_features = torch.bmm(C_ij, base_features.unsqueeze(-1)).squeeze(-1)  # [E, 3]
+        
+        # Construct final 7D message vector:
+        # [z_ij, delta_eta_norm, sin_delta_phi_norm, delta_R_ij, rotated_1, rotated_2, rotated_3]
+        message = torch.cat([
+            z_ij.unsqueeze(-1),                     # Component 1: momentum fraction difference
+            delta_eta_normalized.unsqueeze(-1),     # Component 2: normalized pseudorapidity difference  
+            sin_delta_phi_normalized.unsqueeze(-1), # Component 3: normalized sine of azimuthal difference
+            delta_R_ij.unsqueeze(-1),              # Component 4: angular separation
+            rotated_features                        # Components 5-7: QFI-rotated kinematic features
+        ], dim=-1)  # [E, 7]
+        
+        return message
