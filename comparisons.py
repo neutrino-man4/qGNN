@@ -369,7 +369,17 @@ class ExperimentComparison:
         if not has_history:
             logger.warning("No training history found for any experiment. Skipping training curves.")
             return
-        
+        colors = ['#1f77b4',  # blue
+            '#ff7f0e',  # orange
+            '#2ca02c',  # green
+            '#d62728',  # red
+            '#9467bd',  # purple
+            '#8c564b',  # brown
+            '#e377c2',  # pink
+            '#7f7f7f',  # gray
+            '#bcbd22',  # yellow-green / chartreuse
+            '#17becf'  # cyan
+        ]
         fig, axes = plt.subplots(1, 3, figsize=(18, 6))
         
         # AUC Evolution
@@ -388,15 +398,16 @@ class ExperimentComparison:
         axes[0].set_ylim([0.5, 1.0])
         
         # Loss Evolution
-        for exp in self.experiments:
+        for idx, exp in enumerate(self.experiments):
             history = exp.get_training_history()
             if 'train_loss' in history and 'val_loss' in history:
                 epochs = range(1, len(history['train_loss']) + 1)
                 label = exp.get_legend_label()
-                axes[1].plot(epochs, history['train_loss'], linewidth=2, 
-                            label=f'{label} (Train)', linestyle='-', marker='o', markersize=3)
-                axes[1].plot(epochs, history['val_loss'], linewidth=2, 
-                            label=f'{label} (Val)', linestyle='--', marker='s', markersize=3)
+                color = colors[idx % len(colors)]
+                axes[1].plot(epochs, history['train_loss'], linewidth=2,
+                            label=f'{label} (Train)', linestyle='-', marker='o', markersize=3, color=color)
+                axes[1].plot(epochs, history['val_loss'], linewidth=2,
+                            label=f'{label} (Val)', linestyle='--', marker='s', markersize=3, color=color)
         
         axes[1].set_xlabel('Epoch', fontsize=17)
         axes[1].set_ylabel('Loss', fontsize=17)
@@ -406,16 +417,17 @@ class ExperimentComparison:
         axes[1].set_yscale('log')
         
         # Accuracy Evolution
-        for exp in self.experiments:
+        for idx, exp in enumerate(self.experiments):
             history = exp.get_training_history()
             if 'train_accuracy' in history and 'val_accuracy' in history:
                 epochs = range(1, len(history['train_accuracy']) + 1)
                 label = exp.get_legend_label()
+                color = colors[idx % len(colors)]
                 axes[2].plot(epochs, history['train_accuracy'], linewidth=2, 
-                            label=f'{label} (Train)', linestyle='-', marker='o', markersize=3)
+                            label=f'{label} (Train)', linestyle='-', marker='o', markersize=3, color=color)
                 axes[2].plot(epochs, history['val_accuracy'], linewidth=2, 
-                            label=f'{label} (Val)', linestyle='--', marker='s', markersize=3)
-        
+                            label=f'{label} (Val)', linestyle='--', marker='s', markersize=3, color=color)
+
         axes[2].set_xlabel('Epoch', fontsize=17)
         axes[2].set_ylabel('Accuracy', fontsize=17)
         axes[2].set_title('Accuracy Evolution', fontsize=19, fontweight='bold')
