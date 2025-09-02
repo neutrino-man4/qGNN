@@ -211,8 +211,8 @@ class JetGraphDataloader(StreamingJetDataLoader):
             data = np.load(self.mean_qfi_path)
             
             # Load both QFI matrices
-            self.qcd_mean_qfi = 4*data['qcd_qfi']
-            self.top_mean_qfi = 4*data['top_qfi'] # Calculated using the QMT function from Pennylane: equal to 1/4 QFI (hence the multiplication by 4)
+            self.qcd_mean_qfi = data['qcd_qfi']
+            self.top_mean_qfi = data['top_qfi'] 
             
             # Load jet counts
             self.n_qcd_jets = int(data['n_qcd'])
@@ -237,9 +237,9 @@ class JetGraphDataloader(StreamingJetDataLoader):
     
     def _precompute_edge_features(self) -> None:
         """Precompute edge features from both averaged QFI matrices."""
-        # Apply the same 4x scaling factor as in original dataloader
+        
         scaled_qcd_qfi = 4 * self.qcd_mean_qfi
-        scaled_top_qfi = 4 * self.top_mean_qfi
+        scaled_top_qfi = 4 * self.top_mean_qfi # Calculated using the QMT function from Pennylane: equal to 1/4 QFI (hence the multiplication by 4)
         
         # Extract edge features for both classes
         qcd_edge_features = self._extract_edge_features_from_mean_qfi(scaled_qcd_qfi)
