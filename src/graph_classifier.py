@@ -13,9 +13,10 @@ import torch.nn.functional as F
 from torch_geometric.nn import global_mean_pool, global_max_pool, global_add_pool
 from torch_geometric.data import Data, Batch
 import numpy as np
+import src.layers as layers
 from typing import List, Optional, Union, Tuple, Dict, Any
 from loguru import logger
-
+import tqdm
 # Import project modules - FixedCorrelationMessage will be implemented in src.layers
 from src.layers import GlobalPooling
 # from src.layers import FixedCorrelationMessage  # To be implemented later
@@ -46,10 +47,10 @@ class JetGraph(nn.Module):
     def __init__(
         self,
         message_type: str = 'fixed_correlation',
-        num_mp_layers: int = 3,
-        pooling_type: str = 'concat',  # Default to concat for 6D features
+        num_mp_layers: int = 1,
+        pooling_type: str = 'concat',  # Default to concat for 7D features
         output_mode: str = 'default',
-        feature_dim: int = 6,  # 3D mean + 3D max = 6D for concat pooling
+        feature_dim: int = 6,  # 3D mean + 3D max = 7D for concat pooling
         extra_params: Dict[str, Any] = None
     ):
         super().__init__()
@@ -69,16 +70,16 @@ class JetGraph(nn.Module):
         # Validate output mode
         if self.output_mode not in ['default', 'fisher', 'mahalanobis']:
             raise ValueError(f"Invalid output_mode: {output_mode}. Must be 'default', 'fisher', or 'mahalanobis'")
-        
+        if num_mp_layers > 1:
+            logger.warning("Multiple message passing layers are not yet supported.")
+            raise NotImplementedError("Multiple message passing layers are not yet supported. The message output is 7 dimensional, the nodes have 3D features atm")
         # Create fixed message passing layers
         self.mp_layers = nn.ModuleList()
         for i in range(num_mp_layers):
             logger.debug(f"Creating fixed message passing layer {i+1}/{num_mp_layers}")
             
             if self.message_type == 'fixed_correlation':
-                # Will use FixedCorrelationMessage from src.layers when implemented
-                # For now, create placeholder that will be replaced
-                mp_layer = self._create_placeholder_fixed_mp()
+                mp_layer = layers.FixedCorrelationMessage()
             else:
                 raise ValueError(f"Unsupported fixed message type: {self.message_type}")
             
@@ -90,9 +91,9 @@ class JetGraph(nn.Module):
         
         # Set expected feature dimension based on pooling
         if pooling_type == 'concat':
-            expected_dim = 6  # 3D mean + 3D max
+            expected_dim = 14  # 3D mean + 3D max
         else:
-            expected_dim = 3  # Single pooling output
+            expected_dim = 7  # Single pooling output
         
         if self.feature_dim != expected_dim:
             logger.warning(f"Feature dimension mismatch: expected {expected_dim} for {pooling_type} pooling, got {feature_dim}")
@@ -122,11 +123,11 @@ class JetGraph(nn.Module):
         logger.warning("Class means not set - use set_class_means() before classification")
     
     def _create_placeholder_fixed_mp(self):
-        """Create placeholder for fixed message passing - will be replaced with actual implementation."""
+        """Create placeholder for fixed message passing - now superseded by actual implementation."""
         class PlaceholderFixedMP(nn.Module):
             def __init__(self):
                 super().__init__()
-                logger.warning("Using placeholder fixed message passing - implement FixedCorrelationMessage in src.layers")
+                logger.warning("Using placeholder fixed message passing - don't do this, this is just an identity. Use a message passing function from src.layers")
             
             def forward(self, x, edge_index, edge_attr):
                 # Placeholder: return input unchanged
@@ -144,9 +145,9 @@ class JetGraph(nn.Module):
         Set the class means and covariance matrix for statistical discrimination.
         
         Args:
-            ttbar_mean: 6D mean vector for TTbar jets (label 1)
-            qcd_mean: 6D mean vector for QCD jets (label 0)  
-            pooled_covariance: Pooled covariance matrix (6x6) for Mahalanobis distance.
+            ttbar_mean: 7D mean vector for TTbar jets (label 1)
+            qcd_mean: 7D mean vector for QCD jets (label 0)  
+            pooled_covariance: Pooled covariance matrix (7x7) for Mahalanobis distance.
                               If None, uses identity matrix.
         
         Note:
@@ -345,7 +346,7 @@ class JetGraph(nn.Module):
         qcd_features = []
         
         with torch.no_grad():
-            for batch in dataloader:
+            for batch in tqdm.tqdm(dataloader,total=len(dataloader)):
                 batch = batch.to(device)
                 features = self.forward(batch)  # [batch_size, feature_dim]
                 
@@ -444,7 +445,7 @@ class JetGraph(nn.Module):
 
 def create_jet_graph(
     message_type: str = 'fixed_correlation',
-    num_layers: int = 3,
+    num_layers: int = 1,
     pooling: str = 'concat',
     output_mode: str = 'default',
     **kwargs
@@ -477,9 +478,9 @@ def create_jet_graph(
     
     # Determine feature dimension based on pooling
     if pooling == 'concat':
-        feature_dim = 6  # 3D mean + 3D max
+        feature_dim = 14  # 3D mean + 3D max
     else:
-        feature_dim = 3  # Single pooling method
+        feature_dim = 7  # Single pooling method
     
     model = JetGraph(
         message_type=message_type,
