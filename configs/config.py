@@ -38,6 +38,7 @@ class DataConfig:
     use_qfi_correlations: bool = True
     num_workers: int = 8
     pin_memory: bool = True
+    stat_path: str = "/ceph/abal/QML/qGNN/merged/statistics"
 
 
 @dataclass
@@ -263,6 +264,7 @@ def _create_data_config(data: dict) -> DataConfig:
         use_qfi_correlations=data.get('use_qfi_correlations', True),
         num_workers=data.get('num_workers', 8),
         pin_memory=data.get('pin_memory', True),
+        stat_path=data.get('stat_path', "/ceph/abal/QML/qGNN/merged/statistics")
     )
 
 
@@ -397,7 +399,7 @@ def _validate_config(config: Config) -> None:
         ValueError: If configuration values are invalid
     """
     # Validate model type
-    if config.model.type.lower() not in ['correlation','uni-correlation', 'bilinear', 'conv1d', 'gat']:
+    if config.model.type.lower() not in ['correlation','uni-correlation', 'bilinear', 'conv1d', 'gat', 'fixed_correlation']:
         raise ValueError(f"Invalid model type: {config.model.type}. Must be 'correlation', 'uni-correlation', 'bilinear', 'conv1d', or 'GAT' (case-insensitive)")
 
     # Validate type-specific configurations
