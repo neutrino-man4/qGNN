@@ -12,6 +12,7 @@ import numpy as np
 from typing import List, Iterator
 from torch_geometric.data import Data, Batch
 import time
+from loguru import logger
 
 class StreamingJetDataLoader:
     """
@@ -104,7 +105,7 @@ class StreamingJetDataLoader:
         """Read a batch of jets from current file."""
         # Read batch data at once
         node_features = self.current_file['jetConstituentsList'][start_idx:end_idx]  # [batch, 10, 3]
-        qfi_matrices = 4*self.current_file['jetConstituentsQFI'][start_idx:end_idx]    # [batch, 30, 30], the multiplication by 4 is to bring the bounds to [-1,1]
+        qfi_matrices = 4*self.current_file['jetConstituentsQFI'][start_idx:end_idx]    # [batch, 30, 30], Pennylane's QMT function returns 1/4 QFI, need this multiplicative factor there
         labels = self.current_file['truth_labels'][start_idx:end_idx]               # [batch]
         jet_pts = self.current_file['jetFeatures'][start_idx:end_idx, 0]           # [batch]
         
@@ -164,6 +165,176 @@ class StreamingJetDataLoader:
         """Cleanup file handle."""
         self._close_current_file()
 
+class JetGraphDataloader(StreamingJetDataLoader):
+    """
+    Streaming DataLoader that uses class-specific averaged QFI matrices for edge features.
+    Uses QCD mean QFI for QCD jets and Top mean QFI for Top jets.
+    """
+    
+    def __init__(
+        self,
+        h5_files: List[str],
+        batch_size: int = 32,
+        use_qfi_correlations: bool = True,
+        mean_qfi_path: str = None
+    ):
+        """
+        Initialize streaming dataloader with class-specific averaged QFI edge features.
+        
+        Args:
+            h5_files: List of paths to H5 files
+            batch_size: Batch size for yielding
+            use_qfi_correlations: If True, use QFI correlations; if False, use identity baseline
+            mean_qfi_path: Path to NPZ file containing averaged QFI matrices
+        """
+        # Initialize parent class
+        super().__init__(h5_files, batch_size, use_qfi_correlations)
+        
+        self.mean_qfi_path = mean_qfi_path
+        
+        # Load and precompute edge features for both classes
+        if use_qfi_correlations and mean_qfi_path:
+            self._load_mean_qfi()
+            self._precompute_edge_features()
+        else:
+            self.precomputed_qcd_edge_features = None
+            self.precomputed_top_edge_features = None
+            if not self.use_qfi_correlations:
+                print('#'*50)
+                print("Using identity baseline (no QFI correlations)")
+                print('#'*50)
+                time.sleep(5)
+    
+    def _load_mean_qfi(self) -> None:
+        """Load averaged QFI matrices for both QCD and Top jets from NPZ file."""
+        try:
+            data = np.load(self.mean_qfi_path)
+            
+            # Load both QFI matrices
+            self.qcd_mean_qfi = 4*data['qcd_qfi']
+            self.top_mean_qfi = 4*data['top_qfi'] # Calculated using the QMT function from Pennylane: equal to 1/4 QFI (hence the multiplication by 4)
+            
+            # Load jet counts
+            self.n_qcd_jets = int(data['n_qcd'])
+            self.n_top_jets = int(data['n_top'])
+            
+            # Log the information
+            logger.info(f"Loaded QCD averaged QFI matrix: {self.qcd_mean_qfi.shape}")
+            logger.info(f"Loaded Top averaged QFI matrix: {self.top_mean_qfi.shape}")
+            logger.info(f"QCD mean QFI calculated from {self.n_qcd_jets} jets")
+            logger.info(f"Top mean QFI calculated from {self.n_top_jets} jets")
+            
+            # Log matrix statistics
+            logger.debug(f"QCD QFI stats: min={self.qcd_mean_qfi.min():.4f}, "
+                        f"max={self.qcd_mean_qfi.max():.4f}, mean={self.qcd_mean_qfi.mean():.4f}")
+            logger.debug(f"Top QFI stats: min={self.top_mean_qfi.min():.4f}, "
+                        f"max={self.top_mean_qfi.max():.4f}, mean={self.top_mean_qfi.mean():.4f}")
+            
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Mean QFI file not found: {self.mean_qfi_path}")
+        except KeyError as e:
+            raise KeyError(f"Required key not found in QFI file: {e}")
+    
+    def _precompute_edge_features(self) -> None:
+        """Precompute edge features from both averaged QFI matrices."""
+        # Apply the same 4x scaling factor as in original dataloader
+        scaled_qcd_qfi = 4 * self.qcd_mean_qfi
+        scaled_top_qfi = 4 * self.top_mean_qfi
+        
+        # Extract edge features for both classes
+        qcd_edge_features = self._extract_edge_features_from_mean_qfi(scaled_qcd_qfi)
+        top_edge_features = self._extract_edge_features_from_mean_qfi(scaled_top_qfi)
+        
+        # Convert to tensors and store
+        self.precomputed_qcd_edge_features = torch.tensor(qcd_edge_features, dtype=torch.float32)
+        self.precomputed_top_edge_features = torch.tensor(top_edge_features, dtype=torch.float32)
+        
+        logger.info(f"Precomputed QCD edge features shape: {self.precomputed_qcd_edge_features.shape}")
+        logger.info(f"Precomputed Top edge features shape: {self.precomputed_top_edge_features.shape}")
+        logger.debug(f"QCD edge features stats: min={self.precomputed_qcd_edge_features.min():.4f}, "
+                    f"max={self.precomputed_qcd_edge_features.max():.4f}")
+        logger.debug(f"Top edge features stats: min={self.precomputed_top_edge_features.min():.4f}, "
+                    f"max={self.precomputed_top_edge_features.max():.4f}")
+    
+    def _extract_edge_features_from_mean_qfi(self, mean_qfi_matrix: np.ndarray) -> np.ndarray:
+        """
+        Extract 3x3 submatrices from mean QFI correlation matrix for all edges.
+        
+        Args:
+            mean_qfi_matrix: Averaged QFI matrix of shape (30, 30)
+            
+        Returns:
+            Edge features array of shape (100, 9)
+        """
+        # Get source and destination indices for all edges
+        src_nodes = self.edge_index[0].numpy()  # [100]
+        dst_nodes = self.edge_index[1].numpy()  # [100]
+        
+        # Vectorized extraction of 3x3 submatrices
+        src_base = src_nodes * 3
+        dst_base = dst_nodes * 3
+        
+        # Create indices for 3x3 submatrix extraction
+        row_offsets = np.tile([0, 0, 0, 1, 1, 1, 2, 2, 2], len(src_nodes))
+        col_offsets = np.tile([0, 1, 2, 0, 1, 2, 0, 1, 2], len(dst_nodes))
+        
+        row_indices = np.repeat(src_base, 9) + row_offsets
+        col_indices = np.repeat(dst_base, 9) + col_offsets
+        
+        # Extract all elements and reshape to [100, 9]
+        extracted = mean_qfi_matrix[row_indices, col_indices].reshape(-1, 9)
+        
+        return extracted
+    
+    def _read_batch(self, start_idx: int, end_idx: int) -> Batch:
+        """
+        Read a batch of jets from current file using class-specific precomputed edge features.
+        
+        Args:
+            start_idx: Starting jet index in current file
+            end_idx: Ending jet index in current file
+            
+        Returns:
+            PyG Batch object with jets using class-appropriate averaged QFI edge features
+        """
+        # Read batch data at once
+        node_features = self.current_file['jetConstituentsList'][start_idx:end_idx]  # [batch, 10, 3]
+        labels = self.current_file['truth_labels'][start_idx:end_idx]               # [batch]
+        jet_pts = self.current_file['jetFeatures'][start_idx:end_idx, 0]           # [batch]
+        
+        # Normalize particle pt by jet pt
+        node_features = node_features.copy()
+        node_features[..., 0] = node_features[..., 0] / jet_pts[:, None]
+        
+        # Create list of PyG Data objects
+        data_list = []
+        for i in range(len(labels)):
+            # Node features
+            x = torch.tensor(node_features[i], dtype=torch.float32)  # [10, 3]
+            
+            # Edge features - use class-specific precomputed features
+            if self.use_qfi_correlations and self.precomputed_qcd_edge_features is not None:
+                # Select appropriate edge features based on jet class
+                if labels[i] == 0:  # QCD jet
+                    edge_attr = self.precomputed_qcd_edge_features.clone()  # [100, 9]
+                else:  # Top jet (labels[i] == 1)
+                    edge_attr = self.precomputed_top_edge_features.clone()  # [100, 9]
+            else:
+                # Identity baseline
+                identity_flat = torch.tensor([0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=torch.float32)
+                edge_attr = identity_flat.repeat(100, 1)  # [100, 9]
+            
+            # Label
+            y = torch.tensor(labels[i], dtype=torch.long)
+            
+            data_list.append(Data(
+                x=x,
+                edge_index=self.edge_index.clone(),
+                edge_attr=edge_attr,
+                y=y
+            ))
+        
+        return Batch.from_data_list(data_list)
 
 def get_total_jets(h5_files: List[str]) -> int:
     """Get total number of jets across all files."""
@@ -178,35 +349,47 @@ if __name__ == "__main__":
     
     # Example file paths
     train_files = [
-        "/ceph/abal/QML/qGNN/train/ZJetsToNuNu_008.h5",
+        "/ceph/abal/QML/qGNN/merged/train/TTBar+ZJets_001.h5",
         #"/ceph/abal/QML/qGNN/val/ZJetsToNuNu_120.h5",
     ]
     
     # Create dataloader
-    dataloader = StreamingJetDataLoader(
-        h5_files=train_files,
-        batch_size=64,
-        use_qfi_correlations=True
-    )
-    
-    print(f"Total batches: {len(dataloader)}")
-    print(f"Total jets: {get_total_jets(train_files)}")
-    
-    # Time the iteration
-    start_time = time.time()
-    total_jets_processed = 0
-
-    for batch_idx, batch in tqdm.tqdm(enumerate(dataloader), total=len(dataloader)):
-        total_jets_processed += batch.num_graphs
+    for i in range(2):
+        if i==0:
+            print("Testing full streaming data loader")
+            dataloader = StreamingJetDataLoader(
+                h5_files=train_files,
+                batch_size=64,
+                use_qfi_correlations=True
+            )
+        else:
+            print("Testing untrainable graph data loader")
+            dataloader = JetGraphDataloader(
+                h5_files=train_files,
+                batch_size=64,
+                use_qfi_correlations=True,
+                mean_qfi_path="/ceph/abal/QML/qGNN/merged/train/qfi/qfi_means.npz"
+            )
+            
+        print(f"Total batches: {len(dataloader)}")
+        print(f"Total jets: {get_total_jets(train_files)}")
         
-        # Print stats for first batch
-        if batch_idx == 0:
-            print(f"Batch shape - x: {batch.x.shape}, edge_index: {batch.edge_index.shape}")
-            print(f"Edge attr shape: {batch.edge_attr.shape}, y shape: {batch.y.shape}")
-            print(f"First batch size: {batch.num_graphs}")
-    
-    end_time = time.time()
-    processing_time = end_time - start_time
-    
-    print(f"Processed {total_jets_processed} jets in {processing_time:.2f} seconds")
-    print(f"Rate: {total_jets_processed/processing_time:.0f} jets/second")
+        # Time the iteration
+        start_time = time.time()
+        total_jets_processed = 0
+
+        for batch_idx, batch in tqdm.tqdm(enumerate(dataloader), total=len(dataloader)):
+            total_jets_processed += batch.num_graphs
+            
+            # Print stats for first batch
+            if batch_idx == 0:
+                print(f"Batch shape - x: {batch.x.shape}, edge_index: {batch.edge_index.shape}")
+                print(f"Edge attr shape: {batch.edge_attr.shape}, y shape: {batch.y.shape}")
+                print(f"First batch size: {batch.num_graphs}")
+        
+        end_time = time.time()
+        processing_time = end_time - start_time
+        
+        print(f"Processed {total_jets_processed} jets in {processing_time:.2f} seconds")
+        print(f"Rate: {total_jets_processed/processing_time:.0f} jets/second")
+
