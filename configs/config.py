@@ -72,7 +72,8 @@ class ModelConfig:
     pooling: str = "mean"  # "mean", "max", "add", "concat"
     activation: str = "elu"
     residual_connections: bool = True
-    
+    distance: str = "mahalanobis"
+
     # Nested configurations for specific model types
     gat_config: GATConfig = field(default_factory=GATConfig)
     conv1d_config: Conv1DConfig = field(default_factory=Conv1DConfig)
@@ -299,6 +300,7 @@ def _create_model_config(data: dict) -> ModelConfig:
         pooling=data.get('pooling', 'mean'),
         activation=data.get('activation', 'elu'),
         residual_connections=data.get('residual_connections', True),
+        distance=data.get('distance', 'mahalanobis'),
         gat_config=_create_gat_config(data.get('gat_config', {})),
         conv1d_config=_create_conv1d_config(data.get('conv1d_config', {}))
     )
