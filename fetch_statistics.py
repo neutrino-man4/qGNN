@@ -54,7 +54,7 @@ def create_statistics_dataloader(config: Any, stat_path: str) -> JetGraphDataloa
     if not os.path.exists(qfi_means_path):
         raise FileNotFoundError(f"QFI means file not found: {qfi_means_path}")
     
-    logger.info(f"Creating dataloader with QFI means from: {qfi_means_path}")
+    #logger.info(f"Creating dataloader with QFI means from: {qfi_means_path}")
     
     dataloader = JetGraphDataloader(
         h5_files=config.data.train_files,
@@ -100,7 +100,7 @@ def main():
         device = setup_device()
         
         # Create dataloader with QFI means
-        logger.info("Creating dataloader with class-averaged QFI matrices...")
+        #logger.info("Creating dataloader with class-averaged QFI matrices...")
         dataloader = create_statistics_dataloader(config, stat_path)
         
         # Create fixed correlation model in default mode
