@@ -120,7 +120,7 @@ class JetGraph(nn.Module):
         
         logger.info(f"JetGraph created successfully with {self.feature_dim}D features")
         logger.info(f"Fixed operations: {num_mp_layers} MP layers, {pooling_type} pooling, {output_mode} discrimination")
-        logger.warning("Class means not set - use set_class_means() before classification")
+        logger.warning("Class means not set - use set_class_means() before classification \n IGNORE: Redundant warning if you are using graph_inference.py since the distance metric has been implemented twice (unfortunately)")
     
     def _create_placeholder_fixed_mp(self):
         """Create placeholder for fixed message passing - now superseded by actual implementation."""
