@@ -176,7 +176,7 @@ class JetGraphDataloader(StreamingJetDataLoader):
         h5_files: List[str],
         batch_size: int = 32,
         use_qfi_correlations: bool = True,
-        mean_qfi_path: str = None
+        mean_qfi_path: str = None, mode: str = None # 
     ):
         """
         Initialize streaming dataloader with class-specific averaged QFI edge features.
@@ -191,11 +191,12 @@ class JetGraphDataloader(StreamingJetDataLoader):
         super().__init__(h5_files, batch_size, use_qfi_correlations)
         
         self.mean_qfi_path = mean_qfi_path
-        
+        self.mode = mode
         # Load and precompute edge features for both classes
         if use_qfi_correlations and mean_qfi_path:
-            self._load_mean_qfi()
-            self._precompute_edge_features()
+            pass
+            #self._load_mean_qfi()
+            #self._precompute_edge_features()
         else:
             self.precomputed_qcd_edge_features = None
             self.precomputed_top_edge_features = None
@@ -306,6 +307,8 @@ class JetGraphDataloader(StreamingJetDataLoader):
         node_features = node_features.copy()
         node_features[..., 0] = node_features[..., 0] / jet_pts[:, None]
         
+            # Use individual QFIs
+        qfi_matrices = self.current_file['jetConstituentsQFI'][start_idx:end_idx]  # [batch, 30, 30]
         # Create list of PyG Data objects
         data_list = []
         for i in range(len(labels)):
@@ -313,12 +316,17 @@ class JetGraphDataloader(StreamingJetDataLoader):
             x = torch.tensor(node_features[i], dtype=torch.float32)  # [10, 3]
             
             # Edge features - use class-specific precomputed features
-            if self.use_qfi_correlations and self.precomputed_qcd_edge_features is not None:
-                # Select appropriate edge features based on jet class
-                if labels[i] == 0:  # QCD jet
-                    edge_attr = self.precomputed_qcd_edge_features.clone()  # [100, 9]
-                else:  # Top jet (labels[i] == 1)
-                    edge_attr = self.precomputed_top_edge_features.clone()  # [100, 9]
+            # if self.use_qfi_correlations and self.precomputed_qcd_edge_features is not None:
+            #     # Select appropriate edge features based on jet class
+            #     if self.mode == 'inference':
+            #         edge_attr = self._extract_edge_features(qfi_matrices[i])  # [100, 9]
+            #     else:
+            #         if labels[i] == 0:  # QCD jet
+            #             edge_attr = self.precomputed_qcd_edge_features.clone()  # [100, 9]
+            #         else:  # Top jet (labels[i] == 1)
+            #             edge_attr = self.precomputed_top_edge_features.clone()  # [100, 9]
+            if self.use_qfi_correlations:
+                edge_attr = self._extract_edge_features(qfi_matrices[i])  # [100, 9]
             else:
                 # Identity baseline
                 identity_flat = torch.tensor([0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=torch.float32)
@@ -335,6 +343,7 @@ class JetGraphDataloader(StreamingJetDataLoader):
             ))
         
         return Batch.from_data_list(data_list)
+
 
 def get_total_jets(h5_files: List[str]) -> int:
     """Get total number of jets across all files."""
