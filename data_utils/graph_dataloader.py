@@ -134,7 +134,8 @@ class StreamingJetDataLoader:
                 x=x,
                 edge_index=self.edge_index.clone(),
                 edge_attr=edge_attr,
-                y=y
+                y=y,
+                qfi_matrix=torch.tensor(qfi_matrices[i]) # Append the original QFI matrix for comparison
             ))
         
         return Batch.from_data_list(data_list)
