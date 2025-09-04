@@ -70,7 +70,7 @@ def plot_log_roc_curves(metrics_list: List[Tuple[np.ndarray, np.ndarray, float]]
     
     # Formatting
     plt.xlim([0.0, 1.0])
-    plt.ylim([1.0, 1.0e4])
+    plt.ylim([1.0, 1.0e6])
     plt.yscale('log')
     plt.xlabel('Signal Efficiency (TPR)', fontsize=17)
     plt.ylabel('Background Rejection (FPR$^{-1}$)', fontsize=17)
