@@ -288,7 +288,7 @@ def plot_roc_curve(y_true: np.ndarray, y_prob: np.ndarray, save_path: str, metri
     fig, ax = plt.subplots(figsize=(8, 6))
     
     # Calculate ROC curve
-    fpr, tpr, _ = roc_curve(y_true, y_prob)
+    fpr, tpr, thresholds = roc_curve(y_true, y_prob)
     roc_auc = metrics['auc']
     
     # Plot ROC curve
@@ -312,7 +312,7 @@ def plot_roc_curve(y_true: np.ndarray, y_prob: np.ndarray, save_path: str, metri
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
     logger.info(f"ROC curve saved to: {save_path}")
-
+    return fpr,tpr,thresholds
 
 def plot_sic_curve(y_true: np.ndarray, y_prob: np.ndarray, save_path: str, metrics: Dict[str, float]):
     """Plot SIC (Significance Improvement Characteristic) curve with CMS style."""
@@ -448,14 +448,14 @@ def main():
         logger.info("=" * 60)
         
         # Save metrics to JSON
-        metrics_path = os.path.join(results_dir, "test_metrics.json")
-        with open(metrics_path, 'w') as f:
-            json.dump(metrics, f, indent=2)
-        logger.info(f"Metrics saved to: {metrics_path}")
+        # metrics_path = os.path.join(results_dir, "test_metrics.json")
+        # with open(metrics_path, 'w') as f:
+        #     json.dump(metrics, f, indent=2)
+        # logger.info(f"Metrics saved to: {metrics_path}")
         
         # Plot and save ROC curve
         roc_path = os.path.join(results_dir, "roc_curve.png")
-        plot_roc_curve(true_labels, probabilities, roc_path, metrics)
+        fpr,tpr,thresholds = plot_roc_curve(true_labels, probabilities, roc_path, metrics)
         
         # Plot and save SIC curve
         sic_path = os.path.join(results_dir, "sic_curve.png")
@@ -468,6 +468,16 @@ def main():
                 config.data.test_files, file_indices, jet_indices,
                 true_labels, predictions, probabilities, output_dir
             )
+        
+        metrics_for_npz = metrics.copy()
+        metrics_for_npz['fpr'] = fpr
+        metrics_for_npz['tpr'] = tpr  
+        metrics_for_npz['thresholds'] = thresholds
+        
+        # Save metrics to NPZ
+        metrics_npz_path = os.path.join(results_dir, "metrics.npz")
+        np.savez(metrics_npz_path, **metrics_for_npz)
+        logger.info(f"Metrics NPZ saved to: {metrics_npz_path}")
         
         logger.success("Testing completed successfully!")
         logger.info(f"All results saved in: {results_dir}")
