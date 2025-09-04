@@ -59,6 +59,7 @@ class Conv1DConfig:
     """Conv1D message passing configuration."""
     out_channels: int = 4
     kernel_size: int = 5
+    edge_mlp_dim: List[int] = field(default_factory=lambda: [9, 16, 8, 4, 3])
     mlp_layers: List[int] = field(default_factory=lambda: [3, 16, 8, 4, 2])
 
 
@@ -287,6 +288,7 @@ def _create_conv1d_config(data: dict) -> Conv1DConfig:
     return Conv1DConfig(
         out_channels=data.get('out_channels', 4),
         kernel_size=data.get('kernel_size', 5),
+        edge_mlp_dim=data.get('edge_mlp_dim', [9, 16, 8, 4, 3])
     )
 
 
