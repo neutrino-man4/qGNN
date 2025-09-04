@@ -327,12 +327,13 @@ class Conv1DMessagePassing(MessagePassing):
         kernel_size: int = 5,
         mlp_layers: List[int] = [3, 16, 8, 4, 2],
         activation: nn.Module = nn.ELU(),
-        aggr: str = 'add'
+        aggr: str = 'add',
+        edge_mlp_dim: List[int] = [9, 16, 8, 4, 3]
     ):
         super().__init__(aggr=aggr)
         
-        # Input dimension: x_i (3) + x_j (3) + C_ji (9) = 15
-        self.input_dim = 9
+        # Input dimension: x_i (3) + x_j (3) + whatever dimension the edge MLP outputs
+        self.input_dim = 6+edge_mlp_dim[-1]
         self.out_channels = out_channels
         self.kernel_size = kernel_size
         self.mlp_layers = mlp_layers
@@ -344,7 +345,8 @@ class Conv1DMessagePassing(MessagePassing):
             bias=True,
             padding=(kernel_size - 1) // 2  # Keep same sequence length
         )
-        
+        self.edge_mlp_dim = edge_mlp_dim
+
         # Calculate conv output dimension
         conv_output_length = self.input_dim  # With padding='same'
         conv_output_dim = out_channels * conv_output_length
@@ -354,18 +356,18 @@ class Conv1DMessagePassing(MessagePassing):
         self.output_dim = 3
         self.activation = activation
         self.edge_mlp = ConfigurableMLP(
-            layer_sizes=[9, 16, 8, 4, 3],
+            layer_sizes=self.edge_mlp_dim,
             activation=self.activation
         )
         self.final_mlp = ConfigurableMLP(
             layer_sizes=self.mlp_layers,
             activation=self.activation
         )
-        self.temperature = nn.Parameter(torch.Tensor(3)) # Shape: 3,
+        self.temperature = nn.Parameter(torch.Tensor(self.edge_mlp_dim[-1])) # Shape: last dimension of edge MLP,
         nn.init.constant(self.temperature, 0.0)
         logger.info(f"Conv1DMessagePassing: out_channels={out_channels}, kernel_size={kernel_size}, "
                    f"conv_output_dim={conv_output_dim}, final_dim=3, mlp_layers={mlp_layers}")
-    
+        logger.info(f"Edge MLP dimensions: {self.edge_mlp_dim}")
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor) -> torch.Tensor:
         """
         Args:
@@ -391,8 +393,9 @@ class Conv1DMessagePassing(MessagePassing):
             Messages [E, output_dim]
         """
         # Concatenate all features: [x_i, x_j, C_ji]
-        message_input = torch.cat([x_i, x_j, self.temperature*self.edge_mlp(edge_attr)], dim=-1)  # [E, 15]
-        
+        self.embedding = self.temperature*self.edge_mlp(edge_attr)
+        message_input = torch.cat([x_i, x_j, self.embedding], dim=-1)  # [E, 15]
+
         # Reshape for Conv1d: [batch, channels, sequence]
         conv_input = message_input.unsqueeze(1)  # [E, 1, 15]
         
@@ -405,6 +408,13 @@ class Conv1DMessagePassing(MessagePassing):
         
         # Optional final MLP
         return self.final_mlp(conv_output)
+
+    def print_temperature(self):
+        """ Return temperature parameters. """
+        logger.info(f"Temperature parameters: {self.temperature.data}")
+    def fetch_embedding(self):
+        """ Return message embedding. """
+        return self.embedding
 
 class CorrelationModulatedGAT(MessagePassing):
     """
