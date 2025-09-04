@@ -551,9 +551,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python compare_experiments.py exp1/ exp2/ exp3/
-  python compare_experiments.py ./experiments/convGNN_0001/ ./experiments/quantum_convGNN_0002/
-  python compare_experiments.py ./experiments/*/
+  python comparisons.py exp1/ exp2/ exp3/
+  python comparisons.py ./experiments/convGNN_0001/ ./experiments/quantum_convGNN_0002/
+  python comparisons.py ./experiments/*/
         """
     )
     
