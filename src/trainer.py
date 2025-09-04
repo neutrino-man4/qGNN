@@ -189,7 +189,13 @@ class JetGNNTrainer:
                     if self.early_stopping(monitor_metric):
                         logger.info(f"Training stopped early at epoch {epoch}")
                         break
-            
+                # Save QFI evolution
+                # self._save_qfi_evolution(epoch, train_metrics['reconstructed_qfi'])
+                # if epoch==0:
+                #     if train_metrics['original_qfi'] is not None:
+                #         self._save_qfi_evolution(epoch, train_metrics['original_qfi'], original=True)
+                #     else:
+                #         logger.warning("Original QFI is None, skipping save and proceeding.")
             # Training completed
             training_time = time.time() - start_time
             logger.success(f"Training completed in {training_time/3600:.2f} hours")
@@ -265,13 +271,15 @@ class JetGNNTrainer:
                     f"Epoch {self.current_epoch} [{batch_idx}/{num_batches}] "
                     f"Loss: {loss.item():.4f}, LR: {current_lr:.2e}"
                 )
-        
+
         # Calculate epoch metrics
         # iterate over train_loader and compute train metrics, with model in eval mode
         self.model.eval()
-        logger.info("Quick pass to get the training loss")
+        logger.info("(Not so) quick pass to get the training loss and QFI evolution")
         train_loss_real = 0.0
         train_correct = 0
+        #reconstructed_qfi=[]
+        #original_qfi = [] if self.current_epoch==0 else None
         with torch.no_grad():
             for batch_idx, batch in enumerate(tqdm(self.train_loader, desc="Training Loss calculation", total=num_batches)):
                 batch = batch.to(self.device)
@@ -280,6 +288,17 @@ class JetGNNTrainer:
                 train_loss_real += loss.item()
                 predictions = torch.argmax(logits, dim=1)
                 train_correct += (predictions == batch.y).sum().item()
+                # if batch_idx%100 == 0:
+                #     reconstructed_qfi.append(self.model.get_reconstructed_qfi_batch_vectorized(
+                #         batch.edge_index, 
+                #         batch.batch, 
+                #         batch.num_graphs
+                #     ))
+                # if self.current_epoch==0 and batch_idx%100 == 0:
+                #     original_qfi.append(batch.qfi_matrix.cpu())
+        #import pdb;pdb.set_trace()
+        #reconstructed_qfi = torch.cat(reconstructed_qfi, dim=0) if reconstructed_qfi else None
+        #original_qfi = torch.cat(original_qfi, dim=0) if original_qfi else None
         avg_loss = train_loss_real / num_batches
         accuracy = train_correct / total_samples
         
@@ -287,7 +306,9 @@ class JetGNNTrainer:
             'loss': avg_loss,
             'accuracy': accuracy,
             'stream_loss': total_loss / num_batches,
-            'stream_accuracy': total_correct / total_samples
+            'stream_accuracy': total_correct / total_samples,
+         #   'reconstructed_qfi': reconstructed_qfi,
+         #   'original_qfi': original_qfi
         }
     
     def validate_epoch(self) -> Dict[str, float]:
@@ -463,7 +484,16 @@ class JetGNNTrainer:
         logger.success(f" Checkpoint loaded successfully. Resuming from epoch {resume_epoch}")
         
         return resume_epoch
-
+    def _save_qfi_evolution(self, epoch: int, reconstructed_qfi: np.ndarray, original:bool = False) -> None:
+        """ Accepts the epoch and the reconstructed QFI and saves both the QFI, and its average over the first dimension to an npz file.
+        """
+        file_path = self.checkpoint_dir / f"qfi_evolution_epoch_{epoch:03d}.npz"
+        if original:
+            file_path = self.checkpoint_dir / "original_QFI.npz"
+        np.savez(file_path, qfi=reconstructed_qfi, mean_qfi=reconstructed_qfi.mean(axis=0))
+        logger.info(f"evolved QFI at epoch {epoch+1} written to: {file_path}")
+        print("\n\n ##### Take a deep breath ##### \n\n")
+        time.sleep(2)
 
 def create_optimizer(model: torch.nn.Module, config: Any) -> torch.optim.Optimizer:
     """
