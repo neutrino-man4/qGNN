@@ -15,9 +15,9 @@ This study builds on the quantum machine learning framework **1P1Q** (One Partic
 
 We extract the Quantum Fisher Information (QFI) matrix from the 1P1Q framework to create enhanced graph structures. The QFI is mathematically defined as:
 
-$$F_{jk} = \text{Tr}\left[\rho \frac{\partial^2 \ln \rho}{\partial \theta_j \partial \theta_k}\right] = 2 \sum_n \frac{(\partial_j \lambda_n)(\partial_k \lambda_n)}{\lambda_n}$$
+$$Q_{ij} = 4 \text{Re}\left[\langle \partial_i \psi | \partial_j \psi \rangle - \langle \partial_i \psi | \psi \rangle \langle \psi | \partial_j \psi \rangle\right]$$
 
-where $\rho(\theta)$ is the parameterized quantum state, $\theta = \{\theta_j\}$ are the trainable parameters, $\lambda_n$ are the eigenvalues of $\rho$, and $\partial_j \equiv \frac{\partial}{\partial \theta_j}$.
+where $\psi(\theta)$ is the parameterized quantum state, in this case a tensor product of Hilbert spaces, $\theta = \{\theta_i\}$ are the trainable parameters, and therefore $\partial_i = \dfrac{\partial}{\partial \theta_i}$.
 
 ### Quantum-Enhanced Graph Construction
 
