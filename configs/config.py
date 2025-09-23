@@ -72,6 +72,7 @@ class ModelConfig:
     classifier_hidden_layers: List[int] = field(default_factory=lambda: [16, 8])
     pooling: str = "mean"  # "mean", "max", "add", "concat"
     activation: str = "elu"
+    aggregation: str = "add"  # "mean", "max", "add"
     residual_connections: bool = True
     distance: str = "mahalanobis"
 
@@ -301,6 +302,7 @@ def _create_model_config(data: dict) -> ModelConfig:
         classifier_hidden_layers=data.get('classifier_hidden_layers', [16, 8]),
         pooling=data.get('pooling', 'mean'),
         activation=data.get('activation', 'elu'),
+        aggregation=data.get('aggregation', 'add'),
         residual_connections=data.get('residual_connections', True),
         distance=data.get('distance', 'mahalanobis'),
         gat_config=_create_gat_config(data.get('gat_config', {})),
@@ -403,8 +405,8 @@ def _validate_config(config: Config) -> None:
         ValueError: If configuration values are invalid
     """
     # Validate model type
-    if config.model.type.lower() not in ['correlation','uni-correlation', 'bilinear', 'conv1d', 'gat', 'fixed_correlation']:
-        raise ValueError(f"Invalid model type: {config.model.type}. Must be 'correlation', 'uni-correlation', 'bilinear', 'conv1d', or 'GAT' (case-insensitive)")
+    if config.model.type.lower() not in ['correlation','uni-correlation', 'bilinear', 'conv1d', 'gat', 'fixed_correlation', "trainable"]:
+        raise ValueError(f"Invalid model type: {config.model.type}. Must be 'correlation', 'uni-correlation', 'bilinear', 'conv1d', 'trainable' or 'GAT' (case-insensitive)")
 
     # Validate type-specific configurations
     if config.model.type.lower() == "gat":
@@ -420,7 +422,7 @@ def _validate_config(config: Config) -> None:
             raise ValueError(f"Conv1D kernel_size must be positive: {config.model.conv1d_config.kernel_size}")
 
     # Validate pooling type
-    if config.model.pooling not in ['mean', 'max', 'add', 'concat']:
+    if config.model.pooling not in ['mean', 'max', 'add', 'concat', 'matrix']:
         raise ValueError(f"Invalid pooling type: {config.model.pooling}")
     
     # Validate optimizer
