@@ -1,11 +1,10 @@
 """
 Author: Aritra Bal, ETP
-Date: XIII Idibus Sextilibus anno ab urbe condita MMDCCLXXVIII
+Date: ante diem quartum Nonas Ianuarias anno ab urbe condita MMDCCLXXVIII
 
-Minimalistic trainer for Jet GNN classification with essential training components.
-Handles training loop, validation, checkpointing, and progress logging.
+Refactored trainer for QFI-based Jet GNN classification with comprehensive training utilities.
+Handles training loop, validation, checkpointing, and QFI matrix analysis.
 """
-
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
@@ -24,7 +23,6 @@ class EarlyStopping:
     """
     Early stopping utility to halt training when validation metric stops improving.
     """
-    
     def __init__(self, patience: int, monitor: str = "val_auc", mode: str = "max", min_delta: float = 1e-4):
         """
         Args:
@@ -39,7 +37,6 @@ class EarlyStopping:
         self.min_delta = min_delta
         self.best_score = None
         self.epochs_without_improvement = 0
-        
         logger.info(f"Early stopping: monitoring {monitor} with patience {patience}")
     
     def __call__(self, current_score: float) -> bool:
@@ -77,16 +74,16 @@ class EarlyStopping:
         return should_stop
 
 
-class JetGNNTrainer:
+class QFIJetGNNTrainer:
     """
-    Trainer class for Jet GNN models with comprehensive training utilities.
+    Trainer class for QFI-based Jet GNN models with comprehensive training utilities.
     """
     
     def __init__(
         self,
         model: torch.nn.Module,
-        train_loader: torch.utils.data.DataLoader,
-        val_loader: torch.utils.data.DataLoader,
+        train_loader,
+        val_loader,
         optimizer: torch.optim.Optimizer,
         scheduler: Optional[torch.optim.lr_scheduler._LRScheduler],
         config: Any,
@@ -97,9 +94,9 @@ class JetGNNTrainer:
         Initialize trainer with model, data, and training configuration.
         
         Args:
-            model: The JetGNN model to train
-            train_loader: Training data loader
-            val_loader: Validation data loader  
+            model: The QFIJetGNN model to train
+            train_loader: Training data loader (StreamingJetDataLoader)
+            val_loader: Validation data loader (StreamingJetDataLoader)
             optimizer: Optimizer for training
             scheduler: Learning rate scheduler (optional)
             config: Configuration object with training parameters
@@ -136,10 +133,11 @@ class JetGNNTrainer:
         self.training_history = {
             'train_loss': [], 'train_accuracy': [],
             'val_loss': [], 'val_accuracy': [], 'val_auc': [],
-            'learning_rates': [], 'train_stream_loss': [], 'train_stream_accuracy': []
+            'learning_rates': [], 
+            'qfi_reconstruction_stats': []
         }
         
-        logger.info(f"Trainer initialized - Device: {device}")
+        logger.info(f"QFI Trainer initialized - Device: {device}")
         logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
         logger.info(f"Training batches: {len(train_loader)}, Validation batches: {len(val_loader)}")
     
@@ -150,7 +148,7 @@ class JetGNNTrainer:
         Returns:
             Final training metrics
         """
-        logger.info("Starting training...")
+        logger.info("Starting QFI GNN training...")
         start_time = time.time()
         
         try:
@@ -163,17 +161,15 @@ class JetGNNTrainer:
                 # Validation epoch
                 val_metrics = self.validate_epoch()
                 
-                # Learning rate scheduling
-                #import pdb;pdb.set_trace()
+                # Update training history
                 self._update_history(train_metrics, val_metrics)
                 
+                # Learning rate scheduling
                 if self.scheduler is not None:
                     if isinstance(self.scheduler, ReduceLROnPlateau):
                         self.scheduler.step(val_metrics[self.config.training.early_stopping.monitor])
                     else:
                         self.scheduler.step()
-                
-                # Update training history
                 
                 # Log epoch results
                 self._log_epoch_results(epoch, train_metrics, val_metrics)
@@ -183,22 +179,25 @@ class JetGNNTrainer:
                 if epoch % self.config.checkpointing.save_frequency == 0 or is_best:
                     self._save_checkpoint(epoch, val_metrics, is_best)
                 
+                # QFI analysis every few epochs
+                if epoch % 5 == 0:
+                    qfi_stats = self._analyze_qfi_reconstruction()
+                    if qfi_stats:
+                        self.training_history['qfi_reconstruction_stats'].append({
+                            'epoch': epoch,
+                            'stats': qfi_stats
+                        })
+                
                 # Early stopping check
                 if self.early_stopping is not None:
                     monitor_metric = val_metrics[self.config.training.early_stopping.monitor]
                     if self.early_stopping(monitor_metric):
                         logger.info(f"Training stopped early at epoch {epoch}")
                         break
-                # Save QFI evolution
-                # self._save_qfi_evolution(epoch, train_metrics['reconstructed_qfi'])
-                # if epoch==0:
-                #     if train_metrics['original_qfi'] is not None:
-                #         self._save_qfi_evolution(epoch, train_metrics['original_qfi'], original=True)
-                #     else:
-                #         logger.warning("Original QFI is None, skipping save and proceeding.")
+            
             # Training completed
             training_time = time.time() - start_time
-            logger.success(f"Training completed in {training_time/3600:.2f} hours")
+            logger.success(f"QFI GNN training completed in {training_time/3600:.2f} hours")
             
             # Save final checkpoint
             self._save_checkpoint(self.current_epoch, val_metrics, is_final=True)
@@ -217,7 +216,7 @@ class JetGNNTrainer:
             self._save_checkpoint(self.current_epoch, val_metrics, is_interrupted=True)
             raise
         except Exception as e:
-            logger.exception("Training failed")  # includes full traceback
+            logger.exception("Training failed")
             raise
     
     def train_epoch(self) -> Dict[str, float]:
@@ -231,9 +230,10 @@ class JetGNNTrainer:
         total_loss = 0.0
         total_correct = 0
         total_samples = 0
-        num_batches=len(self.train_loader)
-        # Progress tracking
+        num_batches = len(self.train_loader)
         log_frequency = self.config.logging.log_frequency
+        
+        # Training loop
         for batch_idx, batch in enumerate(tqdm(self.train_loader, desc="Training", total=num_batches)):
             # Move batch to device
             batch = batch.to(self.device)
@@ -251,7 +251,7 @@ class JetGNNTrainer:
             # Gradient clipping
             if self.config.training.gradient_clip_val > 0:
                 torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), 
+                    self.model.parameters(),
                     self.config.training.gradient_clip_val
                 )
             
@@ -271,44 +271,14 @@ class JetGNNTrainer:
                     f"Epoch {self.current_epoch} [{batch_idx}/{num_batches}] "
                     f"Loss: {loss.item():.4f}, LR: {current_lr:.2e}"
                 )
-
+        
         # Calculate epoch metrics
-        # iterate over train_loader and compute train metrics, with model in eval mode
-        self.model.eval()
-        logger.info("(Not so) quick pass to get the training loss and QFI evolution")
-        train_loss_real = 0.0
-        train_correct = 0
-        #reconstructed_qfi=[]
-        #original_qfi = [] if self.current_epoch==0 else None
-        with torch.no_grad():
-            for batch_idx, batch in enumerate(tqdm(self.train_loader, desc="Training Loss calculation", total=num_batches)):
-                batch = batch.to(self.device)
-                logits = self.model(batch)
-                loss = F.cross_entropy(logits, batch.y)
-                train_loss_real += loss.item()
-                predictions = torch.argmax(logits, dim=1)
-                train_correct += (predictions == batch.y).sum().item()
-                # if batch_idx%100 == 0:
-                #     reconstructed_qfi.append(self.model.get_reconstructed_qfi_batch_vectorized(
-                #         batch.edge_index, 
-                #         batch.batch, 
-                #         batch.num_graphs
-                #     ))
-                # if self.current_epoch==0 and batch_idx%100 == 0:
-                #     original_qfi.append(batch.qfi_matrix.cpu())
-        #import pdb;pdb.set_trace()
-        #reconstructed_qfi = torch.cat(reconstructed_qfi, dim=0) if reconstructed_qfi else None
-        #original_qfi = torch.cat(original_qfi, dim=0) if original_qfi else None
-        avg_loss = train_loss_real / num_batches
-        accuracy = train_correct / total_samples
+        avg_loss = total_loss / num_batches
+        accuracy = total_correct / total_samples
         
         return {
             'loss': avg_loss,
-            'accuracy': accuracy,
-            'stream_loss': total_loss / num_batches,
-            'stream_accuracy': total_correct / total_samples,
-         #   'reconstructed_qfi': reconstructed_qfi,
-         #   'original_qfi': original_qfi
+            'accuracy': accuracy
         }
     
     def validate_epoch(self) -> Dict[str, float]:
@@ -326,8 +296,8 @@ class JetGNNTrainer:
         all_probabilities = []
         all_labels = []
         num_batches = len(self.val_loader)
+        
         with torch.no_grad():
-            # wrap in tqdm with total arg
             for batch in tqdm(self.val_loader, desc="Validation", total=num_batches):
                 # Move batch to device
                 batch = batch.to(self.device)
@@ -340,7 +310,6 @@ class JetGNNTrainer:
                 total_loss += loss.item()
                 predictions = torch.argmax(logits, dim=1)
                 probabilities = F.softmax(logits, dim=1)[:, 1]  # Probability of TTbar class
-                
                 total_correct += (predictions == batch.y).sum().item()
                 total_samples += batch.y.size(0)
                 
@@ -348,15 +317,15 @@ class JetGNNTrainer:
                 all_predictions.extend(predictions.cpu().numpy())
                 all_probabilities.extend(probabilities.cpu().numpy())
                 all_labels.extend(batch.y.cpu().numpy())
-            
+        
         # Calculate metrics
         avg_loss = total_loss / num_batches
         accuracy = total_correct / total_samples
+        
         # Calculate AUC
         try:
             auc = roc_auc_score(all_labels, all_probabilities)
         except ValueError:
-            # Handle case where only one class is present
             logger.warning("Could not calculate AUC - only one class present in validation set")
             auc = 0.5
         
@@ -366,6 +335,83 @@ class JetGNNTrainer:
             'auc': auc
         }
     
+    def _analyze_qfi_reconstruction(self) -> Optional[Dict[str, float]]:
+        """
+        Analyze QFI matrix reconstruction quality using validation data.
+        
+        Returns:
+            Dictionary with reconstruction statistics or None if analysis fails
+        """
+        try:
+            self.model.eval()
+            
+            # Take first validation batch for analysis
+            for batch in self.val_loader:
+                batch = batch.to(self.device)
+                
+                with torch.no_grad():
+                    # Forward pass to update model features
+                    _ = self.model(batch)
+                    
+                    # Reconstruct QFI matrices
+                    reconstructed_qfi = self.model.reconstruct_qfi_matrices(batch)
+                    
+                    # For comparison, create original QFI from input features
+                    original_qfi = self._reconstruct_original_qfi(batch)
+                    
+                    # Compare reconstruction
+                    stats = self.model.get_qfi_reconstruction_stats(original_qfi, reconstructed_qfi)
+                    
+                    logger.debug(f"QFI reconstruction - MSE: {stats['mse']:.6f}, "
+                                f"Correlation: {stats['correlation']:.4f}")
+                    
+                    return stats
+                
+        except Exception as e:
+            logger.warning(f"QFI reconstruction analysis failed: {e}")
+            return None
+    
+    def _reconstruct_original_qfi(self, batch) -> torch.Tensor:
+        """
+        Reconstruct original QFI matrix from input batch data.
+        
+        Args:
+            batch: PyG batch object
+            
+        Returns:
+            Original QFI matrices [batch_size, 30, 30]
+        """
+        batch_size = int(batch.batch.max().item()) + 1
+        device = batch.x.device
+        num_nodes = 30
+        
+        # Initialize QFI matrices
+        qfi_matrices = torch.zeros(batch_size, num_nodes, num_nodes, device=device)
+        
+        # Fill diagonal from original node features
+        for batch_idx in range(batch_size):
+            node_mask = (batch.batch == batch_idx)
+            original_diagonal = batch.x[node_mask].squeeze(-1)  # [30]
+            qfi_matrices[batch_idx]=torch.diag_embed(original_diagonal)
+        
+        # Fill off-diagonal from original edge features
+        edge_batch = batch.batch[batch.edge_index[0]]
+        
+        for edge_idx in range(batch.edge_index.shape[1]):
+            src = batch.edge_index[0, edge_idx].item()
+            tgt = batch.edge_index[1, edge_idx].item()
+            batch_idx = edge_batch[edge_idx].item()
+            
+            # Convert to local indices
+            src_local = src % num_nodes
+            tgt_local = tgt % num_nodes
+            
+            # Set matrix element
+            edge_value = batch.edge_attr[edge_idx, 0].item()
+            qfi_matrices[batch_idx, src_local, tgt_local] = edge_value
+        
+        return qfi_matrices
+    
     def _update_history(self, train_metrics: Dict[str, float], val_metrics: Dict[str, float]) -> None:
         """Update training history with current epoch metrics."""
         self.training_history['train_loss'].append(train_metrics['loss'])
@@ -374,13 +420,10 @@ class JetGNNTrainer:
         self.training_history['val_accuracy'].append(val_metrics['accuracy'])
         self.training_history['val_auc'].append(val_metrics['auc'])
         self.training_history['learning_rates'].append(self.optimizer.param_groups[0]['lr'])
-        self.training_history['train_stream_loss'].append(train_metrics['stream_loss'])
-        self.training_history['train_stream_accuracy'].append(train_metrics['stream_accuracy'])
-        
+    
     def _log_epoch_results(self, epoch: int, train_metrics: Dict[str, float], val_metrics: Dict[str, float]) -> None:
         """Log comprehensive epoch results."""
         current_lr = self.optimizer.param_groups[0]['lr']
-        
         logger.info(
             f"Epoch {epoch:3d} | "
             f"Train Loss: {train_metrics['loss']:.4f} | "
@@ -394,7 +437,6 @@ class JetGNNTrainer:
     def _is_best_model(self, val_metrics: Dict[str, float]) -> bool:
         """Check if current model is the best so far."""
         current_metric = val_metrics[self.config.checkpointing.best_metric]
-        
         if self.config.checkpointing.best_mode == "max":
             is_best = current_metric > self.best_metric
         else:
@@ -406,7 +448,7 @@ class JetGNNTrainer:
         
         return is_best
     
-    def _save_checkpoint(self, epoch: int, metrics: Dict[str, float], is_best: bool = False, 
+    def _save_checkpoint(self, epoch: int, metrics: Dict[str, float], is_best: bool = False,
                         is_final: bool = False, is_interrupted: bool = False) -> None:
         """Save model checkpoint with training state."""
         checkpoint = {
@@ -417,7 +459,8 @@ class JetGNNTrainer:
             'metrics': metrics,
             'best_metric': self.best_metric,
             'training_history': self.training_history,
-            'config': self.config.__dict__ if hasattr(self.config, '__dict__') else str(self.config)
+            'config': self.config.__dict__ if hasattr(self.config, '__dict__') else str(self.config),
+            'model_architecture': self.model.get_architecture_info()
         }
         
         # Regular checkpoint
@@ -446,8 +489,17 @@ class JetGNNTrainer:
         
         # Save training history as JSON
         history_path = self.save_dir / "training_history.json"
+        
+        # Convert any numpy/tensor values to native Python types for JSON serialization
+        json_history = {}
+        for key, value in self.training_history.items():
+            if isinstance(value, list):
+                json_history[key] = [float(v) if isinstance(v, (np.floating, torch.Tensor)) else v for v in value]
+            else:
+                json_history[key] = value
+        
         with open(history_path, 'w') as f:
-            json.dump(self.training_history, f, indent=2)
+            json.dump(json_history, f, indent=2)
     
     def load_checkpoint(self, checkpoint_path: str) -> int:
         """
@@ -459,8 +511,7 @@ class JetGNNTrainer:
         Returns:
             Epoch number to resume from
         """
-        logger.info(f"Loading checkpoint from: {checkpoint_path}")
-        
+        logger.info(f"Loading QFI GNN checkpoint from: {checkpoint_path}")
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
         
         # Load model state
@@ -481,19 +532,10 @@ class JetGNNTrainer:
         self.training_history = checkpoint.get('training_history', self.training_history)
         
         resume_epoch = checkpoint['epoch'] + 1
-        logger.success(f" Checkpoint loaded successfully. Resuming from epoch {resume_epoch}")
+        logger.success(f"QFI GNN checkpoint loaded successfully. Resuming from epoch {resume_epoch}")
         
         return resume_epoch
-    def _save_qfi_evolution(self, epoch: int, reconstructed_qfi: np.ndarray, original:bool = False) -> None:
-        """ Accepts the epoch and the reconstructed QFI and saves both the QFI, and its average over the first dimension to an npz file.
-        """
-        file_path = self.checkpoint_dir / f"qfi_evolution_epoch_{epoch:03d}.npz"
-        if original:
-            file_path = self.checkpoint_dir / "original_QFI.npz"
-        np.savez(file_path, qfi=reconstructed_qfi, mean_qfi=reconstructed_qfi.mean(axis=0))
-        logger.info(f"evolved QFI at epoch {epoch+1} written to: {file_path}")
-        print("\n\n ##### Take a deep breath ##### \n\n")
-        time.sleep(2)
+
 
 def create_optimizer(model: torch.nn.Module, config: Any) -> torch.optim.Optimizer:
     """
@@ -545,7 +587,8 @@ def create_scheduler(optimizer: torch.optim.Optimizer, config: Any) -> Optional[
             mode=config.training.early_stopping.mode,
             factor=config.training.scheduler_factor,
             patience=config.training.scheduler_patience,
-            verbose=True,threshold=1e-2
+            verbose=True,
+            threshold=1e-2
         )
     elif scheduler_type == "step":
         scheduler = StepLR(
