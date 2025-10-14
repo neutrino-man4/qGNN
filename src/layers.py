@@ -230,16 +230,20 @@ class BasicMessage(MessagePassing):
     ):
         super().__init__(aggr=aggr)
 
-        # Build MLP: input=2, output=3
-        layer_sizes = [3] + mlp_layers + [3]
-        self.edge_mlp = ConfigurableMLP(
-            layer_sizes=layer_sizes,
+        # Build MLP: input=2, output=2
+        self.message_mlp = ConfigurableMLP(
+            layer_sizes=[3]+mlp_layers+[1],
             activation=activation,
-            dropout=0.0,
-            output_activation=None  # optional bounding later
+            dropout=0.2,
+            output_activation=activation  # optional bounding later
         )
-
-        logger.info(f"Creating BasicMessage with MLP: {layer_sizes}, aggregation: {aggr}")
+        self.edge_mlp = ConfigurableMLP(
+            layer_sizes=[3]+mlp_layers+[1],
+            activation=activation,
+            dropout=0.2,
+            output_activation=activation  # optional bounding later
+        )
+        logger.info(f"Creating BasicMessage with MLP: {mlp_layers} hidden layers, aggregation: {aggr}")
 
         # Placeholder for storing edge updates
         self.updated_edges = None
@@ -259,8 +263,7 @@ class BasicMessage(MessagePassing):
             Aggregated messages [N, 1]
         """
         # Weight messages by edge features: m_ij * e_ij
-        weighted_messages = inputs * edge_attr  # [E, 1]
-        
+        weighted_messages = inputs * self.updated_edges  # [E, 1]
         # Apply the chosen aggregation method to weighted messages
         if self.aggr == 'add':
             return scatter_add(weighted_messages, index, dim=0, dim_size=dim_size)
@@ -280,6 +283,7 @@ class BasicMessage(MessagePassing):
         Returns:
             updated_nodes [N, 1], updated_edges [E, 1]
         """
+        self.updated_edges = edge_attr.clone()  # Initialize with current edge features
         updated_nodes = self.propagate(edge_index, x=x, edge_attr=edge_attr)
         return updated_nodes, self.updated_edges
 
@@ -293,19 +297,18 @@ class BasicMessage(MessagePassing):
             Messages for node updates [E, 1]
         """
         # Compute input for MLP
-        
-        diff_magnitude = torch.abs(x_j + x_i + x_j**2 + x_i**2)  # [E, 1]
-        mlp_input = torch.cat([x_i, edge_attr * diff_magnitude, edge_attr], dim=-1)  # [E, 3]
 
-        mlp_output = self.edge_mlp(mlp_input)  # [E, 3]
+        mlp_input = torch.cat([x_i, x_j, torch.abs(x_i + x_j) + torch.abs(x_i - x_j)], dim=-1)  # [E, 3]
+
+        mlp_output = self.message_mlp(mlp_input)  # [E, 1]
 
         # Split outputs
         x_i_update = mlp_output[:, 0:1]  # message for target node
-        # x_j_update = mlp_output[:, 1:2]  # unused here, but could be added
-        e_ij_update = mlp_output[:, 2:3]  # edge update
+        #x_j_update = mlp_output[:, 1:2]  # unused here, but could be added
+        e_ij_update = self.edge_mlp(mlp_input)[:,0:1]  # edge update
 
         # Store edge updates for use in forward
-        self.updated_edges = e_ij_update
+        self.updated_edges += e_ij_update
 
         return x_i_update
 
@@ -319,7 +322,7 @@ class BasicMessage(MessagePassing):
         Returns:
             Updated node features [N, 1]
         """
-        return x + aggr_out
+        return x+aggr_out
 
 
 class AdaptiveQFILayer(nn.Module):
@@ -535,7 +538,6 @@ class QuantumGATMessage(MessagePassing):
         """
         # Transform edge features to match heads dimension
         edge_features = self.W_edge(edge_attr)  # [E, heads]
-        
         # Concatenate query, key, and edge features for attention computation
         # [E, heads, 2*out_channels + 1]
         attention_input = torch.cat([
