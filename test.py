@@ -46,7 +46,7 @@ class QFIMatrixPlotter:
         logger.info(f"QFI plotter initialized, saving to: {output_dir}")
     
     def plot_qfi_matrix(self, qfi_matrix: np.ndarray, plot_label: str, 
-                       save_name: str, show_stats: bool = True) -> None:
+                       save_name: str, show_stats: bool = True, set_zero_diag:bool = False) -> None:
         """
         Plot QFI matrix with quantum circuit style formatting.
         
@@ -73,11 +73,14 @@ class QFIMatrixPlotter:
         # diag_vals = diag_vals/diag_max if diag_max>0 else diag_vals
         # np.fill_diagonal(qfi_matrix, diag_vals)
         # Set up normalization
+        if set_zero_diag:
+            np.fill_diagonal(qfi_matrix, 0.0)
         data_range = max(abs(qfi_matrix.min()), abs(qfi_matrix.max()))
-        if data_range>1.0:
-            data_range = 60.
+        
         if data_range == 0:
             data_range = 1  # Avoid division by zero
+        if data_range < 0.5:
+            data_range = 0.25 
         norm = matplotlib.colors.Normalize(vmin=-data_range, vmax=data_range)
         
         # Plot the matrix
@@ -159,6 +162,7 @@ class QFIMatrixPlotter:
         qcd_recon_avg = np.mean(reconstructed_qfi[qcd_mask], axis=0)
         ttbar_recon_avg = np.mean(reconstructed_qfi[ttbar_mask], axis=0)
         # Plot 4 average matrices
+        #import pdb;pdb.set_trace()
         self.plot_qfi_matrix(
             qcd_original_avg,
             "Average Original QFI Matrix (QCD Jets)",
@@ -177,14 +181,14 @@ class QFIMatrixPlotter:
             qcd_recon_avg,
             "Average Reconstructed QFI Matrix (QCD Jets)",
             "avg_reconstructed_qfi_qcd",
-            show_stats=True
+            show_stats=True, set_zero_diag=True
         )
         
         self.plot_qfi_matrix(
             ttbar_recon_avg,
             "Average Reconstructed QFI Matrix (TTbar Jets)",
             "avg_reconstructed_qfi_ttbar", 
-            show_stats=True
+            show_stats=True, set_zero_diag=True
         )
         
         # Compute and plot class differences
@@ -195,14 +199,14 @@ class QFIMatrixPlotter:
             original_diff,
             "Class Difference in Original QFI (TTbar - QCD)",
             "class_difference_original_qfi",
-            show_stats=True
+            show_stats=True, set_zero_diag=True
         )
         
         self.plot_qfi_matrix(
             recon_diff,
             "Class Difference in Reconstructed QFI (TTbar - QCD)",
             "class_difference_reconstructed_qfi",
-            show_stats=True
+            show_stats=True, set_zero_diag=True
         )
         
         logger.success("Class-separated QFI analysis completed")
@@ -502,7 +506,9 @@ def main():
             mp_mlp_layers=getattr(config.model, 'mp_hidden_layers', [16, 8]),
             classifier_layers=config.model.classifier_hidden_layers,
             pooling=config.model.pooling,
-            activation=getattr(config.model, 'activation', 'elu')
+            aggr=getattr(config.model, 'aggregation', 'add'),
+            activation=getattr(config.model, 'activation', 'elu'),
+            extra_kwargs=config.model if config.model.type.lower()=='gat' else None
         )
         model = model.to(device)
         
