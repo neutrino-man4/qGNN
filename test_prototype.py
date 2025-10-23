@@ -44,7 +44,7 @@ class QFIMatrixPlotter:
         logger.info(f"QFI plotter initialized, saving to: {output_dir}")
     
     def plot_qfi_matrix(self, qfi_matrix: np.ndarray, plot_label: str, 
-                       save_name: str, show_stats: bool = True, set_zero_diag: bool = False) -> None:
+                       save_name: str, show_stats: bool = True, set_zero_diag: bool = False, data_range: float = 1.0) -> None:
         """
         Plot QFI matrix with quantum circuit style formatting.
         
@@ -72,10 +72,9 @@ class QFIMatrixPlotter:
         plot_matrix = qfi_matrix.copy()
         if set_zero_diag:
             np.fill_diagonal(plot_matrix, 0.0)
-        data_range = 3.
         
         if data_range == 0:
-            data_range = 1  # Avoid division by zero
+            data_range = 1.  # Avoid division by zero
         if data_range < 0.5:
             data_range = 0.25 
         norm = matplotlib.colors.Normalize(vmin=-data_range, vmax=data_range)
@@ -103,8 +102,8 @@ class QFIMatrixPlotter:
         label_positions = [i for i in range(3*N_qubits)]
         
         for pos, label in zip(label_positions, rotation_labels):
-            ax.text(pos, 3*N_qubits+0.1, label, ha='center', va='top', fontsize=10)
-            ax.text(-0.7, pos, label, ha='right', va='center', fontsize=10)
+            ax.text(pos, 3*N_qubits+0.1, label, ha='center', va='top', fontsize=12)
+            ax.text(-0.7, pos, label, ha='right', va='center', fontsize=12)
         
         # Add qubit number labels
         qubit_positions = [1 + 3*i for i in range(N_qubits)]
@@ -115,8 +114,8 @@ class QFIMatrixPlotter:
             ax.text(-1.4, pos, label, ha='right', va='center', fontsize=14, fontweight='bold')
         
         # Set labels and title
-        ax.set_xlabel('Qubit Number', labelpad=40, fontsize=14)
-        ax.set_ylabel('Qubit Number', labelpad=40, fontsize=14)
+        ax.set_xlabel('Qubit Number', labelpad=40, fontsize=17)
+        ax.set_ylabel('Qubit Number', labelpad=40, fontsize=17)
         plt.title(plot_label, fontsize=18, pad=20)
         plt.tight_layout()
         
@@ -548,7 +547,7 @@ def main():
         "Learned QCD Prototype",
         "learned_qcd_prototype",
         show_stats=True,
-        set_zero_diag=False
+        set_zero_diag=False, data_range=3.0
     )
     
     plotter.plot_qfi_matrix(
@@ -556,7 +555,7 @@ def main():
         "Learned Top Prototype",
         "learned_top_prototype",
         show_stats=True,
-        set_zero_diag=False
+        set_zero_diag=False, data_range=3.0
     )
     # Plot initial prototypes for comparison
     plotter.plot_qfi_matrix(
@@ -581,14 +580,14 @@ def main():
         "Difference: Learned - Initial QCD Prototype",
         "diff_learned_minus_initial_qcd_prototype",
         show_stats=True,
-        set_zero_diag=False
+        set_zero_diag=False, data_range=1.0
     )
     plotter.plot_qfi_matrix(
         diff_top,
         "Difference: Learned - Initial Top Prototype",
         "diff_learned_minus_initial_top_prototype",
         show_stats=True,
-        set_zero_diag=False
+        set_zero_diag=False, data_range=1.0
     )
     # Plot mean reconstructed QFI matrices
     logger.info("Plotting mean reconstructed QFI matrices...")
@@ -600,7 +599,7 @@ def main():
         "Mean Reconstructed QCD QFI Matrix",
         "mean_reconstructed_qcd_qfi",
         show_stats=True,
-        set_zero_diag=False
+        set_zero_diag=False, data_range=1.0
     )
     
     plotter.plot_qfi_matrix(
@@ -608,7 +607,7 @@ def main():
         "Mean Reconstructed Top QFI Matrix",
         "mean_reconstructed_top_qfi",
         show_stats=True,
-        set_zero_diag=False
+        set_zero_diag=False, data_range=1.0
     )
     # plot differences between top and qcd for all 3 cases
     logger.info("Plotting difference between Top and QCD mean QFI matrices...")
@@ -620,21 +619,21 @@ def main():
         "Difference: Mean Original Top - QCD QFI Matrix",
         "diff_mean_original_top_minus_qcd_qfi",
         show_stats=True,
-        set_zero_diag=False
+        set_zero_diag=False, data_range=1.0
     )
     plotter.plot_qfi_matrix(
         diff_reconstructed,
         "Difference: Mean Reconstructed Top - QCD QFI Matrix",
         "diff_mean_reconstructed_top_minus_qcd_qfi",
         show_stats=True,
-        set_zero_diag=False
+        set_zero_diag=False, data_range=1.0
     )
     plotter.plot_qfi_matrix(
         diff_prototype,
         "Difference: Learned Top - QCD Prototype",
         "diff_learned_top_minus_qcd_prototype",
         show_stats=True,
-        set_zero_diag=False
+        set_zero_diag=False, data_range=3.0
     )
 
     # Final summary
