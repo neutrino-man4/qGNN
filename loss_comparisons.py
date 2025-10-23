@@ -115,8 +115,8 @@ def plot_metrics(
         epochs = np.arange(1, len(val_losses) + 1)
         ax.plot(epochs, val_losses, marker='o', markersize=4, label=label)
     
-    ax.set_xlabel('Epoch', fontsize=14)
-    ax.set_ylabel('Validation Loss', fontsize=14)
+    ax.set_xlabel('Epoch', fontsize=16)
+    ax.set_ylabel('Validation Loss', fontsize=16)
     ax.legend(loc='best', fontsize=12)
     ax.grid(True, alpha=0.3)
     
@@ -132,10 +132,10 @@ def plot_metrics(
     for val_aucs, label in zip(all_val_aucs, labels):
         epochs = np.arange(1, len(val_aucs) + 1)
         ax.plot(epochs, val_aucs, marker='o', markersize=4, label=label)
-    
-    ax.set_xlabel('Epoch', fontsize=14)
-    ax.set_ylabel('Validation AUC', fontsize=14)
-    ax.legend(loc='best', fontsize=12)
+
+    ax.set_xlabel('Epoch', fontsize=16)
+    ax.set_ylabel('Validation AUC', fontsize=16)
+    ax.legend(loc='best', fontsize=15)
     ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
