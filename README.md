@@ -1,7 +1,9 @@
-# Quantum Enhanced GNNs for Particle Physics Jet Classification
+# QINNs: Quantum Informed Neural Networks for Jet Tomography
 
 **Author:** [Aritra Bal](https://etpwww.etp.kit.edu/~abal/), ETP, KIT  
 **Contact:** [Email](mailto:aritra.bal@do-not-spam.kit.edu)
+
+[![arXiv](https://img.shields.io/badge/arXiv-2502.17301-b31b1b.svg)](https://arxiv.org/abs/2510.17984)
 
 ## Overview
 
@@ -179,6 +181,8 @@ The repository provides comprehensive evaluation metrics including:
 If you use this code in your research, please cite the original 1P1Q paper:
 - [Physical Review D publication](https://journals.aps.org/prd/accepted/10.1103/l8y2-87vq)
 - [arXiv:2502.17301](https://arxiv.org/abs/2502.17301)
+
+and also the QINN [preprint](https://arxiv.org/abs/2510.17984).
 
 ## Contact
  
