@@ -350,18 +350,16 @@ def main():
         # Start training
         logger.info("Starting QFI GNN training process...")
         logger.info("=" * 60)
-        logger.info("🚀 QFI-BASED JET GNN TRAINING STARTED")
+        logger.info("Now the die is cast")
         logger.info("=" * 60)
         
         final_metrics = trainer.train()
         
         logger.info("=" * 60)
-        logger.info("🎯 QFI GNN TRAINING COMPLETED")
+        logger.success("SUCCESS!!!!!")
         logger.info("=" * 60)
         
         # Log final results
-        logger.success("QFI GNN training completed successfully!")
-        logger.info("📊 FINAL RESULTS:")
         for metric_name, metric_value in final_metrics.items():
             if isinstance(metric_value, float):
                 logger.info(f"   {metric_name}: {metric_value:.4f}")
@@ -369,10 +367,9 @@ def main():
                 logger.info(f"   {metric_name}: {metric_value}")
         
         # Log experiment info
-        logger.info(f"📁 Results saved in: {exp_dir}")
-        logger.info(f"🏆 Best model: {exp_dir}/checkpoints/best_model.pth")
-        logger.info(f"📈 Training history: {exp_dir}/training_history.json")
-        logger.info(f"⚙️  Model architecture: QFI-based with {model.architecture_info['num_mp_layers']} MP layers")
+        logger.info(f"Results saved in: {exp_dir}")
+        logger.info(f"Best model is: {exp_dir}/checkpoints/best_model.pth")
+        logger.info(f"Training history saved to: {exp_dir}/training_history.json")
         
         logger.success("All QFI GNN training tasks completed successfully!")
         
