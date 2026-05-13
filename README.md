@@ -3,7 +3,7 @@
 **Author:** [Aritra Bal](https://etpwww.etp.kit.edu/~abal/), ETP, KIT  
 **Contact:** [Email](mailto:aritra.bal@do-not-spam.kit.edu)
 
-[![arXiv](https://img.shields.io/badge/arXiv-2502.17301-b31b1b.svg)](https://arxiv.org/abs/2510.17984)
+[![arXiv](https://img.shields.io/badge/arXiv-2510.17984-b31b1b.svg)](https://arxiv.org/abs/2510.17984)
 
 ## Overview
 
